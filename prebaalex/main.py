@@ -45,6 +45,42 @@ headers = {
     "xi-api-key": API_KEY
 }
 
+# Variable global para almacenar el ID de la voz de Alex Latorre
+ALEX_LATORRE_VOICE_ID = None
+
+def get_alex_latorre_voice_id():
+    """Obtiene el voice_id de 'Alex Latorre' de Eleven Labs."""
+    global ALEX_LATORRE_VOICE_ID
+    if ALEX_LATORRE_VOICE_ID:
+        return ALEX_LATORRE_VOICE_ID
+
+    try:
+        voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
+        voices_resp.raise_for_status()
+        voices_data = voices_resp.json()
+        
+        for voice in voices_data.get('voices', []):
+            if voice.get('name', '').lower() == 'alex latorre': # Case-insensitive comparison
+                ALEX_LATORRE_VOICE_ID = voice.get('voice_id')
+                print(f"Found voice 'Alex Latorre' with ID: {ALEX_LATORRE_VOICE_ID}")
+                return ALEX_LATORRE_VOICE_ID
+        
+        print("ERROR: Voice 'Alex Latorre' not found in your ElevenLabs account.")
+        print("Available voices:")
+        for voice in voices_data.get('voices', []):
+            print(f"  - Name: {voice.get('name')}, ID: {voice.get('voice_id')}, Category: {voice.get('category')}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching voices from ElevenLabs: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching voice ID: {e}")
+        return None
+
+# Llama a la función al iniciar la aplicación para obtener el ID de la voz
+# Esto se ejecutará una vez cuando el servidor Flask comience.
+ALEX_LATORRE_VOICE_ID = get_alex_latorre_voice_id()
+
 def verify_api_key():
     """Verify that the API key is valid by making a test request to Eleven Labs"""
     try:
@@ -222,110 +258,111 @@ def generate_audio():
     value = value_str.strip()
 
     try:
+        voice_id_to_use = ALEX_LATORRE_VOICE_ID
+        if not voice_id_to_use:
+            # Intenta obtener el ID de nuevo si no se encontró al inicio
+            voice_id_to_use = get_alex_latorre_voice_id()
+            if not voice_id_to_use:
+                return jsonify({"error": "Voice 'Alex Latorre' not found or could not be retrieved. Please check backend logs."}), 500
+
         # Generar el texto usando Gemini
         if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
             generated_text = "This morning I woke up thinking about how interesting magic is and how it can surprise people."
             print(f"Warning: Potentially inappropriate content detected. Using safe fallback.")
         else:
             safe_prompt = f"""
-You are generating a short, first-person sentence that sounds like a fleeting thought I had this morning.
+Generate a short, natural voice note — like someone just woke up and is casually recording a weird dream or morning hunch. It should sound spontaneous and human, like the kind of thing you’d say out loud to yourself when you barely remember it.
 
-This thought should feel like a subtle intuition, prediction, or premonition I had after waking up — something that might come true later today, like a magic trick.
+It should include the value ({value}), but not in a forced way — just let it come up naturally, like it’s part of what they remembered from the dream. It shouldn’t directly mention the topic ({topic}), but it should influence the tone and content — think of it as the unspoken context.
 
-IMPORTANT:
-- You MUST explicitly mention BOTH the topic ('{topic}') and the value ('{value}').
-- Your response must sound natural, as if I casually thought this to myself while getting ready for the day.
-- The sentence should be short (one sentence or two at most), positive or neutral in tone, and suitable for all audiences.
-- It should feel like a magical prediction or hunch about someone I might meet or something I might notice during the day.
+Use real, messy language: hesitations, pauses, filler words like “uh,” “kinda,” “I think,” “or something.” The vibe should be loose, sleepy, and conversational. Don’t over-explain, pretty straight to the point. Don’t sound like you’re trying to be clever. Just like someone talking into their phone, half-awake. 
+
+Tone: neutral or curious — like “maybe that means something…”
+
+Length constraint: Keep it short enough that it would take no more than 10 seconds to say out loud.
 
 Examples:
+	•	“Okay, so I just woke up and had this random dream where this girl was freaking out about spiders. Like… not just scared, but full-on panic. No idea why that stuck.”
+	•	“I dunno, I had this dream where someone was talking about going to Paris. Felt super real for some reason. Might hear it again today or something.”
+	•	“Weird dream. Some guy was bragging about getting an A+ in math. I don’t even know who he was.”
 
-If topic is 'academic' and value is 'I got an A+ in math':
-✅ "I had this weird feeling this morning that someone I meet today will be proud of getting an A+ in math."
-
-If topic is 'travel' and value is 'Paris':
-✅ "As I woke up today, I had this odd thought that someone around me will mention travel plans to Paris."
-
-If topic is 'fears' and value is 'spiders':
-✅ "Okay, so… I just woke up, and I had this weird dream that I feel like I should record. In the dream, I met someone… and they told me they had this insane fear of spiders. Like, full-on panic. I know, it’s random… but it felt kinda specific, so… yeah."
-
-Your response must:
-- Be in English.
-- Be phrased as a personal morning thought or hunch.
-- Clearly include both the topic ('{topic}') and the value ('{value}').
-
-Only return the sentence, nothing else.
+Only return the voice note text. Nothing else. Always start with "Okay, so..."
 """
             generated_text = _generate_thought_text(safe_prompt, topic, value)
 
-        print(f"Texto generado: {generated_text}")
+        print(f"Texto generado1: {generated_text}")
 
-        # Usar el archivo cloningvoice.mp3 predefinido
-        audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloningvoice.mp3")
+        # Ya no se clona la voz, se usa la existente.
+        # El siguiente bloque de código para crear/clonar voz se elimina.
+        # ----- INICIO BLOQUE ELIMINADO -----
+        # # Usar el archivo cloningvoice.mp3 predefinido
+        # audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloningvoice.mp3")
 
-        # Verificar que el archivo existe
-        if not os.path.exists(audio_path):
-            return jsonify({"error": "No se encontró el archivo de voz para clonar (cloningvoice.mp3)"}), 500
+        # # Verificar que el archivo existe
+        # if not os.path.exists(audio_path):
+        #     return jsonify({"error": "No se encontró el archivo de voz para clonar (cloningvoice.mp3)"}), 500
 
-        print(f"Usando archivo de voz: {audio_path}, tamaño: {os.path.getsize(audio_path)} bytes")
+        # print(f"Usando archivo de voz: {audio_path}, tamaño: {os.path.getsize(audio_path)} bytes")
 
-        # Crear una nueva voz con el archivo de audio predefinido
-        with open(audio_path, 'rb') as f:
-            file_content = f.read()
+        # # Crear una nueva voz con el archivo de audio predefinido
+        # with open(audio_path, 'rb') as f:
+        #     file_content = f.read()
 
-            files = {
-                "files": (os.path.basename(audio_path), file_content, "audio/mpeg")
-            }
-            data = {
-                "name": "predefined-voice",
-                "description": "Predefined voice for cloning",
-                "labels": '{"accent": ""}',
-                "language": "es"
-            }
+        #     files = {
+        #         "files": (os.path.basename(audio_path), file_content, "audio/mpeg")
+        #     }
+        #     data = {
+        #         "name": "predefined-voice", # Podrías cambiar este nombre si quieres
+        #         "description": "Predefined voice for cloning",
+        #         "labels": '{"accent": ""}', # Ajusta las etiquetas si es necesario
+        #         "language": "es" # Ajusta el idioma si es necesario
+        #     }
 
-            resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files, data=data)
+        #     resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files, data=data)
 
-        print(f"Voice creation response status: {resp.status_code}")
-        print(f"Voice creation response: {resp.text}")
+        # print(f"Voice creation response status: {resp.status_code}")
+        # print(f"Voice creation response: {resp.text}")
 
-        try:
-            resp.raise_for_status()
-            voice_data = resp.json()
-            voice_id = voice_data.get('voice_id')
+        # try:
+        #     resp.raise_for_status()
+        #     voice_data = resp.json()
+        #     voice_id = voice_data.get('voice_id')
 
-            if not voice_id:
-                error_msg = f"No se recibió voice_id en respuesta exitosa: {resp.text}"
-                print(f"ERROR: {error_msg}")
-                return jsonify({"error": error_msg}), 500
+        #     if not voice_id:
+        #         error_msg = f"No se recibió voice_id en respuesta exitosa: {resp.text}"
+        #         print(f"ERROR: {error_msg}")
+        #         return jsonify({"error": error_msg}), 500
 
-        except requests.HTTPError as e:
-            if "voice_limit_reached" in resp.text:
-                print("Se alcanzó el límite de voces. Intentando obtener la lista de voces existentes...")
+        # except requests.HTTPError as e:
+        #     if "voice_limit_reached" in resp.text:
+        #         print("Se alcanzó el límite de voces. Intentando obtener la lista de voces existentes...")
 
-                try:
-                    voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
-                    voices_resp.raise_for_status()
-                    voices = voices_resp.json()
+        #         try:
+        #             voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
+        #             voices_resp.raise_for_status()
+        #             voices = voices_resp.json()
 
-                    cloned_voices = [v for v in voices.get('voices', []) if v.get('category') == 'cloned']
+        #             # Intenta encontrar una voz clonada existente o una específica si es necesario
+        #             cloned_voices = [v for v in voices.get('voices', []) if v.get('category') == 'cloned'] # O busca por nombre
 
-                    if cloned_voices:
-                        voice_id = cloned_voices[0].get('voice_id')
-                        print(f"Usando voz existente con ID: {voice_id}")
-                    else:
-                        return jsonify({"error": "No hay voces disponibles y se alcanzó el límite de creación de voces"}), 500
-                except Exception as ve:
-                    print(f"Error al obtener voces: {ve}")
-                    return jsonify({"error": "Error al obtener voces existentes"}), 500
-            else:
-                error_msg = f"Error HTTP {resp.status_code} de Eleven Labs API: {resp.text}"
-                print(f"ERROR: {error_msg}")
-                return jsonify({"error": error_msg}), resp.status_code
+        #             if cloned_voices:
+        #                 voice_id = cloned_voices[0].get('voice_id') # O la voz específica
+        #                 print(f"Usando voz existente con ID: {voice_id}")
+        #             else:
+        #                 return jsonify({"error": "No hay voces disponibles y se alcanzó el límite de creación de voces"}), 500
+        #         except Exception as ve:
+        #             print(f"Error al obtener voces: {ve}")
+        #             return jsonify({"error": "Error al obtener voces existentes"}), 500
+        #     else:
+        #         error_msg = f"Error HTTP {resp.status_code} de Eleven Labs API: {resp.text}"
+        #         print(f"ERROR: {error_msg}")
+        #         return jsonify({"error": error_msg}), resp.status_code
         
-        if not voice_id: # Safeguard
-             return jsonify({"error": "Failed to obtain a voice_id after creation/retrieval attempts"}), 500
+        # if not voice_id: # Safeguard
+        #      return jsonify({"error": "Failed to obtain a voice_id after creation/retrieval attempts"}), 500
+        # ----- FIN BLOQUE ELIMINADO -----
 
-        tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id)
+        tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use) # Usar voice_id_to_use
 
         # stability and similarity_boost are now stability_val, similarity_boost_val (floats)
         json_payload = {
@@ -336,7 +373,7 @@ Only return the sentence, nothing else.
             }
         }
 
-        print(f"Generando TTS con voice_id: {voice_id}, texto: '{generated_text}', settings: {json_payload['voice_settings']}")
+        print(f"Generando TTS con voice_id: {voice_id_to_use}, texto: '{generated_text}', settings: {json_payload['voice_settings']}")
         tts_resp = requests.post(tts_url, headers={**headers, 'Content-Type': 'application/json'}, json=json_payload)
 
         try:

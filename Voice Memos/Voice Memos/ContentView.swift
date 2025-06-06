@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
+import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGenerator is in UIKit
 
 struct ContentView: View {
     @State private var selectedButton: String = ""
@@ -156,6 +157,12 @@ struct ContentView: View {
                     self.generatedRecording = finalRecording // Update the recording
                     // isLoadingAudio = false // Removed
                     print("ContentView: Audio generation successful, recording updated.")
+                    
+                    // Haptic feedback for success
+                    let generator = UIImpactFeedbackGenerator(style: .heavy) // Changed to .heavy
+                    generator.impactOccurred()
+                    
+                    print("ContentView: Successfully generated audio. Navigating to VoiceMemosView.")
                 }
             } catch {
                 await MainActor.run {
@@ -299,14 +306,32 @@ struct VoiceMemosView: View {
 
     var recordings: [RecordingData] {
         var result = [
-            RecordingData(title: "Carrer dels Ametllers, 9 24", date: formattedDate(Date()), duration: "0:15"),
-            RecordingData(title: "Carrer dels Ametllers, 9 23", date: "14 Apr 2024", duration: "0:10"),
-            RecordingData(title: "Ark Hills 2", date: "4 Oct 2023", duration: "0:06"),
-            RecordingData(title: "Ark Hills", date: "4 Oct 2023", duration: "0:04"),
-            RecordingData(title: "Carrer dels Ametllers, 9 22", date: "23 Feb 2023", duration: "0:31"),
-            RecordingData(title: "Carrer dels Ametllers, 9 21", date: "23 Feb 2023", duration: "0:30"),
-            RecordingData(title: "Carrer dels Ametllers, 9 20", date: "9 Feb 2023", duration: "0:27"),
-            RecordingData(title: "Carrer dels Ametllers, 9 19", date: "9 Feb 2023", duration: "0:28")
+            RecordingData(title: "Carrer dels Ametllers, 9 24", date: "18 May 2025", duration: "0:15"),
+            RecordingData(title: "2024-14-04", date: "14 Apr 2024", duration: "0:12"),
+            RecordingData(title: "Strange Dream 01", date: "2 Apr 2024", duration: "0:09"),
+            RecordingData(title: "Dream 11", date: "21 Mar 2024", duration: "0:07"),
+            RecordingData(title: "Dream 10", date: "8 Mar 2024", duration: "0:31"),
+            RecordingData(title: "Strange Dream 02", date: "22 Feb 2024", duration: "0:30"),
+            RecordingData(title: "Dream 09", date: "10 Feb 2024", duration: "0:27"),
+            // Generate a static array of
+            RecordingData(title: "Strange Dream 03", date: "15 Jan 2024", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 07", date: "2 Jan 2024", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 06", date: "19 Dec 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 05", date: "7 Dec 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Strange Dream 04", date: "23 Nov 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 04", date: "10 Nov 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 03", date: "29 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Strange Dream 05", date: "14 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 02", date: "2 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Dream 01", date: "20 Sep 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "Strange Dream 06", date: "8 Sep 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-08-25", date: "25 Aug 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-08-13", date: "13 Aug 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-07-31", date: "31 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-07-17", date: "17 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-07-03", date: "3 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-06-18", date: "18 Jun 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
+            RecordingData(title: "2023-06-05", date: "5 Jun 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))")
         ]
         
         // Insert the generated recording at the beginning if available
@@ -723,7 +748,7 @@ class VoiceAPIManager: ObservableObject {
         }
     }
     
-    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85, addBackground: Bool = true, backgroundVolume: Double = 0.5) async throws -> Data { // Added addBackground and backgroundVolume with defaults
+    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85, addBackground: Bool = true, backgroundVolume: Double = 0.5) async throws -> Data { // Changed addBackground default to true
         // Try primary URL first
         do {
             return try await generateAudioWithURL(baseURL, topic: topic, value: value, stability: stability, similarityBoost: similarityBoost, addBackground: addBackground, backgroundVolume: backgroundVolume)
@@ -986,7 +1011,7 @@ struct EditScreenView: View {
     @State private var generatedText = ""
     @State private var stability: Double = 0.7
     @State private var similarityBoost: Double = 0.85
-    @State private var addBackground = false // Defaulted to false as per original, can be true if desired
+    @State private var addBackground = true // Defaulted to true
     @State private var backgroundVolume: Double = 0.2
     
     @State private var isLoading = false
@@ -1392,7 +1417,7 @@ struct EditScreenView: View {
         }
         
         isLoading = true
-        print("Generando audio con topic: \(topic), value: \(value)")
+        print("Generando audio con topic: \\(topic), value: \\(value)")
         
         Task {
             do {
@@ -1400,21 +1425,31 @@ struct EditScreenView: View {
                     topic: self.topic, // Use local state topic
                     value: self.value, // Use local state value
                     stability: stability,
-                    similarityBoost: similarityBoost
+                    similarityBoost: similarityBoost,
+                    addBackground: self.addBackground, // Use state variable from EditScreenView
+                    backgroundVolume: self.backgroundVolume // Use state variable from EditScreenView
                 )
                 
                 await MainActor.run {
                     generatedAudioData = result // Update EditScreenView's audio data
                     isLoading = false
-                    print("Successfully received audio data: \(result.count) bytes")
+                    
+                    // Haptic feedback for success
+                    let generator = UIImpactFeedbackGenerator(style: .heavy) // Changed to .heavy
+                    generator.impactOccurred()
+                    
+                    print("Successfully received audio data: \\(result.count) bytes")
                     
                     // Opcionalmente podemos reproducir el audio automáticamente aquí
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    showErrorAlert("Error al generar audio: \(error.localizedDescription)")
-                    print("Error generating audio: \(error)")
+                    showErrorAlert("Error al generar audio: \\(error.localizedDescription)")
+                    print("Error generating audio: \\(error)")
+                    // Haptic feedback for error (optional, using a different style)
+                    // let errorGenerator = UINotificationFeedbackGenerator()
+                    // errorGenerator.notificationOccurred(.error)
                 }
             }
         }
