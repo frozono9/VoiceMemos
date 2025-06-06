@@ -1,0 +1,4 @@
+```
+GENERATE_INFOPLIST_FILE = NO
+INFOPLIST_FILE = "Voice Memos/Voice Memos/Info.plist"
+```

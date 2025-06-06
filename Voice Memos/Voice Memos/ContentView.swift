@@ -2,14 +2,6 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-struct VoiceMemosApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
-
 struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
@@ -957,6 +949,18 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
         return try? Data(contentsOf: url)
     }
     
+    func playData(_ data: Data) throws {
+        do {
+            audioPlayer = try AVAudioPlayer(data: data)
+            audioPlayer?.delegate = self
+            audioPlayer?.play()
+            isPlaying = true
+        } catch {
+            print("Error reproduciendo datos de audio: \(error)")
+            throw RecordingError.playbackFailed
+        }
+    }
+    
     // MARK: - AVAudioPlayerDelegate
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         isPlaying = false
@@ -979,9 +983,12 @@ struct EditScreenView: View {
     @State private var backgroundVolume: Double = 0.2
     
     @State private var isLoading = false
+    @State private var lastGenerationTask: Task<Void, Never>? = nil
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var generatedAudioData: Data?
+    @State private var showDocumentPicker = false
+    @State private var selectedAudioFile: Data?
     
     var body: some View {
         NavigationView {
@@ -1161,7 +1168,7 @@ struct EditScreenView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Specific value for topic:")
+                Text("Valor específico del tema:")
                     .font(.headline)
                 
                 TextField("E.g., spiders, Star Wars, today's weather", text: $value)
@@ -1169,10 +1176,19 @@ struct EditScreenView: View {
                     .onChange(of: value) { _ in
                         generateThoughtIfReady()
                     }
+                    .overlay(
+                        autoGenerationState == .generatingThought || autoGenerationState == .generatingAudio ?
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .padding(.trailing, 8)
+                            } : nil
+                    )
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Text for AI to say (generated):")
+                Text("Texto que quieres que diga la IA (generado):")
                     .font(.headline)
                 
                 TextEditor(text: $generatedText)
@@ -1181,6 +1197,16 @@ struct EditScreenView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
                     .disabled(true)
+                    .overlay(
+                        ZStack {
+                            // Mostrar un mensaje si no hay texto generado
+                            if generatedText.isEmpty && (topic.isEmpty || value.isEmpty) {
+                                Text("Completa el tema y valor para generar texto")
+                                    .foregroundColor(.secondary)
+                                    .padding()
+                            }
+                        }
+                    )
             }
         }
     }
@@ -1254,20 +1280,17 @@ struct EditScreenView: View {
         .cornerRadius(10)
     }
     
-    private var regenerateButton: some View {
-        Button("🔄 Re-generate Audio with New Settings") {
-            // Use the current topic and value from EditScreenView's state,
-            // which were initialized from selectedButton and inputText.
-            // If you make topic/value editable in EditScreenView, this will use the edited values.
-            generateAudio() // This is EditScreenView's method for re-generation
+    private var generateButton: some View {
+        Button("🚀 Generar Audio con IA") {
+            generateAudio()
         }
         .foregroundColor(.white)
         .font(.headline)
         .padding()
         .frame(maxWidth: .infinity)
-        .background(apiManager.connectionStatus == .connected && !isLoading ? Color.orange : Color.gray)
+        .background(canGenerate ? Color.blue : Color.gray)
         .cornerRadius(10)
-        .disabled(apiManager.connectionStatus != .connected || isLoading)
+        .disabled(!canGenerate || isLoading)
     }
     
     private var loadingView: some View {
@@ -1275,16 +1298,22 @@ struct EditScreenView: View {
             ProgressView()
                 .scaleEffect(1.5)
             
-            Text("Training AI with your voice and generating audio...")
+            Text("Entrenando la IA con tu voz y generando el audio...")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                
+            Text("Esto puede tardar unos segundos")
+                .font(.caption)
+                .foregroundColor(.gray)
         }
         .padding()
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(10)
     }
     
     private func resultView(audioData: Data) -> some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("✅ Audio generated successfully!")
+            Text("✅ Audio generado exitosamente!")
                 .font(.headline)
                 .foregroundColor(.green)
             
@@ -1293,10 +1322,10 @@ struct EditScreenView: View {
             
             AudioPlayerView(audioData: audioData)
             
-            ShareLink(item: audioData, preview: SharePreview("Cloned audio", image: Image(systemName: "waveform"))) {
+            ShareLink(item: audioData, preview: SharePreview("Audio clonado", image: Image(systemName: "waveform"))) {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Share Audio")
+                    Text("Compartir Audio")
                 }
                 .foregroundColor(.white)
                 .padding()
@@ -1308,6 +1337,10 @@ struct EditScreenView: View {
         .padding()
         .background(Color.green.opacity(0.1))
         .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+        )
     }
     
     // MARK: - Computed Properties
@@ -1325,32 +1358,40 @@ struct EditScreenView: View {
         showError = true
     }
     
-    private func generateThoughtIfReady() { 
-        // This function might still be useful if textInputSection's topic/value become editable
-        // and you want to update generatedText reactively.
-        // For now, the main generation path doesn't rely on EditScreenView's generatedText for the first pass.
-        // If re-generating, generateAudio() will call apiManager.generateThought internally.
+    private func generateThoughtIfReady() {
         guard !topic.isEmpty && !value.isEmpty else {
             generatedText = ""
+            autoGenerationState = .idle
             return
         }
         
-        // Set isLoading for thought generation if it's a separate step here
-        // Task { ... apiManager.generateThought ... update generatedText ... }
+        Task {
+            do {
+                let thought = try await apiManager.generateThought(topic: topic, value: value)
+                await MainActor.run {
+                    generatedText = thought
+                    print("Successfully generated thought: \(thought)")
+                }
+            } catch {
+                await MainActor.run {
+                    showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
+                    print("Error generating thought: \(error)")
+                }
+            }
+        }
     }
     
-    private func generateAudio() { // This is EditScreenView's method for re-generation
-        // guard canGenerate else { return } // canGenerate might need adjustment or removal
-                                        // if generatedText isn't a hard requirement before re-generating.
-                                        // The backend's /generate-audio now takes topic and value, and generates thought.
-
-        guard !topic.isEmpty, !value.isEmpty else {
-            showErrorAlert("Topic and Value must be provided for re-generation.")
+    private func generateAudio() {
+        guard canGenerate else { return }
+        
+        // Ensure we have the required parameters to generate audio
+        guard !topic.isEmpty, !value.isEmpty, !generatedText.isEmpty else {
+            showErrorAlert("Por favor, asegúrese de que el tema y el valor están definidos")
             return
         }
         
-        isLoading = true // Use EditScreenView's isLoading
-        print("EditScreenView: Re-generating audio with topic: \\(topic), value: \\(value)")
+        isLoading = true
+        print("Generando audio con topic: \(topic), value: \(value)")
         
         Task {
             do {
@@ -1364,13 +1405,26 @@ struct EditScreenView: View {
                 await MainActor.run {
                     generatedAudioData = result // Update EditScreenView's audio data
                     isLoading = false
-                    print("EditScreenView: Successfully re-generated audio data: \\(result.count) bytes")
+                    print("Successfully received audio data: \(result.count) bytes")
+                    
+                    // Opcionalmente podemos reproducir el audio automáticamente aquí
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    showErrorAlert("Error re-generating audio: \\(error.localizedDescription)")
-                    print("EditScreenView: Error re-generating audio: \\(error)")
+                    showErrorAlert("Error al generar audio: \(error.localizedDescription)")
+                    print("Error generating audio: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func verifyAPI() async {
+        do {
+            let isValid = try await apiManager.verifyAPIKey()
+            if !isValid {
+                await MainActor.run {
+                    showErrorAlert("❌ API Key inválida. Por favor verifica tu configuración del servidor.")
                 }
             }
         }
