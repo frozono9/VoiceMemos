@@ -1,0 +1,6 @@
+flask
+requests
+python-dotenv
+pydub
+flask-cors
+google-generativeai

@@ -1,0 +1,418 @@
+import os
+import tempfile
+import requests
+import json
+import traceback
+from flask import Flask, request, send_file, jsonify, render_template
+from dotenv import load_dotenv
+from pydub import AudioSegment
+import google.generativeai as genai
+from google.generativeai.client import configure
+
+load_dotenv()
+API_KEY = os.getenv("ELEVEN_LABS_API_KEY")
+if not API_KEY:
+    raise RuntimeError("ELEVEN_LABS_API_KEY not set in environment")
+
+# Configure Google Gemini API
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("WARNING: GOOGLE_API_KEY not set in environment. Thought generation will not work.")
+else:
+    # Initialize Google Gemini API
+    try:
+        configure(api_key=GOOGLE_API_KEY)
+        print("Google AI client initialized successfully")
+    except Exception as e:
+        print(f"Error initializing Google AI client: {e}")
+        traceback.print_exc()
+
+# Define Gemini model name
+GOOGLE_MODEL_NAME = "gemini-2.0-flash"
+
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
+# Enable CORS for all routes
+from flask_cors import CORS
+CORS(app)
+
+# URLs para la API de Eleven Labs
+ELEVEN_VOICE_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
+ELEVEN_TTS_URL_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+
+# Cabeceras para la API de Eleven Labs
+headers = {
+    "xi-api-key": API_KEY
+}
+
+def verify_api_key():
+    """Verify that the API key is valid by making a test request to Eleven Labs"""
+    try:
+        response = requests.get("https://api.elevenlabs.io/v1/models", headers=headers)
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"API Key verification failed: {e}")
+        return False
+
+@app.route('/')
+def index():
+    return render_template('index_new.html')
+
+@app.route('/verify-api', methods=['GET'])
+def verify_api():
+    """Endpoint to verify API key status"""
+    if verify_api_key():
+        return jsonify({"status": "success", "message": "API key is valid"})
+    else:
+        return jsonify({"status": "error", "message": "API key is invalid"}), 401
+
+def _is_likely_inappropriate(text):
+    """Check if text contains potentially inappropriate content"""
+    if not text:
+        return False
+        
+    text = text.lower()
+    inappropriate_patterns = [
+        'sex', 'porn', 'nude', 'naked', 'xxx', 'dildo', 'vibrator', 'nsfw',
+        'fuck', 'shit', 'ass', 'dick', 'cock', 'pussy', 'cunt', 'whore',
+        'bitch', 'slut', 'horny', 'masturbat', 'orgas', 'nazi', 'kill', 
+        'murder', 'suicide', 'rape', 'racist', 'n-word', 'nigger'
+    ]
+    
+    return any(pattern in text for pattern in inappropriate_patterns)
+
+def _generate_thought_text(prompt, topic, value):
+    """Genera texto usando la API de Gemini"""
+    if not GOOGLE_API_KEY:
+        return f"Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
+    
+    try:
+        # Intenta usar el SDK de Python primero
+        try:
+            from google.generativeai.generative_models import GenerativeModel
+            model = GenerativeModel(GOOGLE_MODEL_NAME)
+            
+            try:
+                thought_response = model.generate_content(prompt)
+                
+                if hasattr(thought_response, 'text'):
+                    return thought_response.text.strip()
+                else:
+                    # Intenta extraer texto de candidates si está disponible
+                    if hasattr(thought_response, 'candidates') and thought_response.candidates:
+                        candidate = thought_response.candidates[0]
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            if parts and hasattr(parts[0], 'text'):
+                                return parts[0].text.strip()
+            except Exception as sdk_ex:
+                print(f"Error con Google AI SDK: {str(sdk_ex)}")
+                traceback.print_exc()
+        except (ImportError, NameError) as import_err:
+            print(f"Error con SDK: {str(import_err)}")
+
+        # Segunda opción: Usar REST API directamente
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_MODEL_NAME}:generateContent?key={GOOGLE_API_KEY}"
+        
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": prompt
+                }]
+            }],
+            "generationConfig": {
+                "temperature": 0.7,
+                "topK": 1,
+                "topP": 0.8,
+                "maxOutputTokens": 100,
+                "stopSequences": []
+            },
+            "safetySettings": [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                }
+            ]
+        }
+        
+        response = requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json=payload
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if "candidates" in result and len(result["candidates"]) > 0:
+                if "content" in result["candidates"][0] and "parts" in result["candidates"][0]["content"]:
+                    return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+    
+    except Exception as e:
+        print(f"Error generando texto: {e}")
+        traceback.print_exc()
+    
+    # Fallback si falla todo
+    return f"Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
+
+@app.route('/generate-audio', methods=['POST'])
+def generate_audio():
+    """Endpoint para generar audio. Soporta form-data (HTML) y JSON (Swift app)."""
+    topic_str = None
+    value_str = None
+    
+    # Default values for voice settings
+    stability_val = 0.7
+    similarity_boost_val = 0.85
+
+    if request.is_json:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be valid JSON if Content-Type is application/json"}), 400
+        
+        topic_str = data.get('topic')
+        value_str = data.get('value')
+        
+        # Allow numbers directly from JSON for these settings, or strings that can be converted
+        stability_input = data.get('stability', stability_val)
+        similarity_boost_input = data.get('similarity_boost', similarity_boost_val)
+
+        try:
+            stability_val = float(stability_input)
+            similarity_boost_val = float(similarity_boost_input)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Los parámetros 'stability' y 'similarity_boost' deben ser números válidos"}), 400
+
+    else:  # Fallback to form data
+        if 'topic' not in request.form or 'value' not in request.form:
+            # Check if it's an empty form submission or truly missing params
+            if not request.form:
+                 return jsonify({"error": "Unsupported Media Type or missing data. Use application/json or form-data."}), 415
+            return jsonify({"error": "Se requieren los parámetros 'topic' y 'value' (form-data)"}), 400
+
+        topic_str = request.form.get('topic')
+        value_str = request.form.get('value')
+        
+        stability_form_str = request.form.get('stability', str(stability_val))
+        similarity_boost_form_str = request.form.get('similarity_boost', str(similarity_boost_val))
+        try:
+            stability_val = float(stability_form_str)
+            similarity_boost_val = float(similarity_boost_form_str)
+        except ValueError:
+            return jsonify({"error": "Los parámetros 'stability' y 'similarity_boost' (form-data) deben ser números válidos"}), 400
+
+    if not topic_str or not isinstance(topic_str, str) or not topic_str.strip():
+        return jsonify({"error": "'topic' es requerido, debe ser un string no vacío y no puede consistir solo de espacios"}), 400
+    if not value_str or not isinstance(value_str, str) or not value_str.strip():
+        return jsonify({"error": "'value' es requerido, debe ser un string no vacío y no puede consistir solo de espacios"}), 400
+    
+    topic = topic_str.strip()
+    value = value_str.strip()
+
+    try:
+        # Generar el texto usando Gemini
+        if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
+            generated_text = "This morning I woke up thinking about how interesting magic is and how it can surprise people."
+            print(f"Warning: Potentially inappropriate content detected. Using safe fallback.")
+        else:
+            safe_prompt = f"""
+You are generating a short, first-person sentence that sounds like a fleeting thought I had this morning.
+
+This thought should feel like a subtle intuition, prediction, or premonition I had after waking up — something that might come true later today, like a magic trick.
+
+IMPORTANT:
+- You MUST explicitly mention BOTH the topic ('{topic}') and the value ('{value}').
+- Your response must sound natural, as if I casually thought this to myself while getting ready for the day.
+- The sentence should be short (one sentence or two at most), positive or neutral in tone, and suitable for all audiences.
+- It should feel like a magical prediction or hunch about someone I might meet or something I might notice during the day.
+
+Examples:
+
+If topic is 'academic' and value is 'I got an A+ in math':
+✅ "I had this weird feeling this morning that someone I meet today will be proud of getting an A+ in math."
+
+If topic is 'travel' and value is 'Paris':
+✅ "As I woke up today, I had this odd thought that someone around me will mention travel plans to Paris."
+
+If topic is 'fears' and value is 'spiders':
+✅ "For some reason, I couldn't shake the feeling this morning that someone I meet will be afraid of spiders."
+
+Your response must:
+- Be in English.
+- Be phrased as a personal morning thought or hunch.
+- Clearly include both the topic ('{topic}') and the value ('{value}').
+
+Only return the sentence, nothing else.
+"""
+            generated_text = _generate_thought_text(safe_prompt, topic, value)
+
+        print(f"Texto generado: {generated_text}")
+
+        # Usar el archivo cloningvoice.mp3 predefinido
+        audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloningvoice.mp3")
+
+        # Verificar que el archivo existe
+        if not os.path.exists(audio_path):
+            return jsonify({"error": "No se encontró el archivo de voz para clonar (cloningvoice.mp3)"}), 500
+
+        print(f"Usando archivo de voz: {audio_path}, tamaño: {os.path.getsize(audio_path)} bytes")
+
+        # Crear una nueva voz con el archivo de audio predefinido
+        with open(audio_path, 'rb') as f:
+            file_content = f.read()
+
+            files = {
+                "files": (os.path.basename(audio_path), file_content, "audio/mpeg")
+            }
+            data = {
+                "name": "predefined-voice",
+                "description": "Predefined voice for cloning",
+                "labels": '{"accent": ""}',
+                "language": "es"
+            }
+
+            resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files, data=data)
+
+        print(f"Voice creation response status: {resp.status_code}")
+        print(f"Voice creation response: {resp.text}")
+
+        try:
+            resp.raise_for_status()
+            voice_data = resp.json()
+            voice_id = voice_data.get('voice_id')
+
+            if not voice_id:
+                error_msg = f"No se recibió voice_id en respuesta exitosa: {resp.text}"
+                print(f"ERROR: {error_msg}")
+                return jsonify({"error": error_msg}), 500
+
+        except requests.HTTPError as e:
+            if "voice_limit_reached" in resp.text:
+                print("Se alcanzó el límite de voces. Intentando obtener la lista de voces existentes...")
+
+                try:
+                    voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
+                    voices_resp.raise_for_status()
+                    voices = voices_resp.json()
+
+                    cloned_voices = [v for v in voices.get('voices', []) if v.get('category') == 'cloned']
+
+                    if cloned_voices:
+                        voice_id = cloned_voices[0].get('voice_id')
+                        print(f"Usando voz existente con ID: {voice_id}")
+                    else:
+                        return jsonify({"error": "No hay voces disponibles y se alcanzó el límite de creación de voces"}), 500
+                except Exception as ve:
+                    print(f"Error al obtener voces: {ve}")
+                    return jsonify({"error": "Error al obtener voces existentes"}), 500
+            else:
+                error_msg = f"Error HTTP {resp.status_code} de Eleven Labs API: {resp.text}"
+                print(f"ERROR: {error_msg}")
+                return jsonify({"error": error_msg}), resp.status_code
+        
+        if not voice_id: # Safeguard
+             return jsonify({"error": "Failed to obtain a voice_id after creation/retrieval attempts"}), 500
+
+        tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id)
+
+        # stability and similarity_boost are now stability_val, similarity_boost_val (floats)
+        json_payload = {
+            "text": generated_text,
+            "voice_settings": {
+                "stability": stability_val, # Use the float converted values
+                "similarity_boost": similarity_boost_val # Use the float converted values
+            }
+        }
+
+        print(f"Generando TTS con voice_id: {voice_id}, texto: '{generated_text}', settings: {json_payload['voice_settings']}")
+        tts_resp = requests.post(tts_url, headers={**headers, 'Content-Type': 'application/json'}, json=json_payload)
+
+        try:
+            tts_resp.raise_for_status()
+        except requests.HTTPError as e:
+            error_msg = f"Error al generar voz: {tts_resp.text}"
+            print(f"ERROR: {error_msg}")
+            return jsonify({"error": error_msg}), tts_resp.status_code
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as out:
+            out.write(tts_resp.content)
+            out_path = out.name
+
+        return send_file(out_path, mimetype='audio/mpeg', as_attachment=True, download_name='output.mp3')
+
+    except Exception as e:
+        print(f"Error general: {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"Error al generar audio: {str(e)}"}), 500
+
+# Configuración adicional para CORS
+@app.route('/generate-thought', methods=['GET'])
+def generate_thought():
+    """Endpoint for generating a thought based on topic and value"""
+    topic = request.args.get('topic')
+    value = request.args.get('value')
+    
+    if not topic or not value:
+        return jsonify({"error": "Both topic and value are required"}), 400
+    
+    # Check for inappropriate content
+    if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
+        generated_text = "This morning I woke up thinking about how interesting magic is and how it can surprise people."
+        print(f"Warning: Potentially inappropriate content detected. Using safe fallback.")
+    else:
+        safe_prompt = f"""
+You are generating a short, first-person sentence that sounds like a fleeting thought I had this morning.
+
+This thought should feel like a subtle intuition, prediction, or premonition I had after waking up — something that might come true later today, like a magic trick.
+
+IMPORTANT:
+- You MUST explicitly mention BOTH the topic ('{topic}') and the value ('{value}').
+- Your response must sound natural, as if I casually thought this to myself while getting ready for the day.
+- The sentence should be short (one sentence or two at most), positive or neutral in tone, and suitable for all audiences.
+- It should feel like a magical prediction or hunch about someone I might meet or something I might notice during the day.
+
+Examples:
+
+If topic is 'academic' and value is 'I got an A+ in math':
+✅ "I had this weird feeling this morning that someone I meet today will be proud of getting an A+ in math."
+
+If topic is 'travel' and value is 'Paris':
+✅ "As I woke up today, I had this odd thought that someone around me will mention travel plans to Paris."
+
+If topic is 'fears' and value is 'spiders':
+✅ "For some reason, I couldn't shake the feeling this morning that someone I meet will be afraid of spiders."
+
+Your response must:
+- Be in English.
+- Be phrased as a personal morning thought or hunch.
+- Clearly include both the topic ('{topic}') and the value ('{value}').
+
+Only return the sentence, nothing else.
+"""
+        generated_text = _generate_thought_text(safe_prompt, topic, value)
+    
+    print(f"Generated thought: {generated_text}")
+    return jsonify({"thought": generated_text})
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+if __name__ == '__main__':
+    # Puerto 5002 para evitar conflictos
+    app.run(host='0.0.0.0', port=5002, debug=True)

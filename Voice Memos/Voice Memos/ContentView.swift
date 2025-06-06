@@ -348,7 +348,7 @@ struct ThoughtRequest {
 
 // MARK: - Network Manager
 class VoiceAPIManager: ObservableObject {
-    private let baseURL = "YOUR_SERVER_URL" // Replace with your server URL
+    private let baseURL = "http://localhost:5002" // Connect to the Python backend running on port 5002
     
     func verifyAPIKey() async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/verify-api") else {
@@ -364,17 +364,41 @@ class VoiceAPIManager: ObservableObject {
     }
     
     func generateThought(topic: String, value: String) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/generate-thought?topic=\(topic.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&value=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
+        guard let encodedTopic = topic.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(baseURL)/generate-thought?topic=\(encodedTopic)&value=\(encodedValue)") else {
             throw NetworkError.invalidURL
         }
         
+        print("Requesting thought from: \(url.absoluteString)")
+        
         let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("Invalid HTTP response")
+            throw NetworkError.invalidResponse
+        }
+        
+        if httpResponse.statusCode != 200 {
+            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let errorMsg = errorJson["error"] as? String {
+                print("Server error: \(errorMsg)")
+                throw NetworkError.serverError
+            }
             throw NetworkError.serverError
         }
         
-        let thoughtResponse = try JSONDecoder().decode(ThoughtResponse.self, from: data)
-        return thoughtResponse.thought
+        do {
+            let thoughtResponse = try JSONDecoder().decode(ThoughtResponse.self, from: data)
+            return thoughtResponse.thought
+        } catch {
+            print("JSON decoding error: \(error)")
+            // Intenta extraer el mensaje directamente del JSON
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let thought = json["thought"] as? String {
+                return thought
+            }
+            throw NetworkError.decodingError
+        }
     }
     
     func generateVoiceClone(request: VoiceGenerationRequest) async throws -> Data {
@@ -396,6 +420,46 @@ class VoiceAPIManager: ObservableObject {
             throw NetworkError.serverError
         }
         
+        return data
+    }
+    
+    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85) async throws -> Data {
+        // First, generate the thought
+        let thought = try await generateThought(topic: topic, value: value)
+        
+        print("Generated thought: \(thought)")
+        
+        // Now send request to generate audio from that thought
+        var request = URLRequest(url: URL(string: "\(baseURL)/generate-audio")!)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Include the thought, topic, and value in the request
+        let requestBody: [String: Any] = [
+            "topic": topic,
+            "value": value,
+            "text": thought,
+            "stability": stability,
+            "similarity_boost": similarityBoost
+        ]
+        
+        print("Sending request to Python backend with: \(requestBody)")
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("Invalid HTTP response")
+            throw NetworkError.invalidResponse
+        }
+        
+        if httpResponse.statusCode != 200 {
+            if let errorData = String(data: data, encoding: .utf8) {
+                print("Server error: \(errorData)")
+            }
+            throw NetworkError.serverError
+        }
+        
+        print("Successfully received MP3 data from server: \(data.count) bytes")
         return data
     }
     
@@ -445,6 +509,7 @@ enum NetworkError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
     case serverError
+    case decodingError
     
     var errorDescription: String? {
         switch self {
@@ -454,6 +519,8 @@ enum NetworkError: Error, LocalizedError {
             return "Respuesta inválida del servidor"
         case .serverError:
             return "Error del servidor"
+        case .decodingError:
+            return "Error al decodificar respuesta del servidor"
         }
     }
 }
@@ -963,10 +1030,11 @@ struct EditScreenView: View {
     
     // MARK: - Computed Properties
     private var canGenerate: Bool {
-        (audioManager.hasRecording || selectedAudioFile != nil) && 
-        !generatedText.isEmpty && 
+        // Para la integración con el backend de Python, solo necesitamos el tema y el valor
+        // El texto generado se obtendrá automáticamente
         !topic.isEmpty && 
-        !value.isEmpty
+        !value.isEmpty && 
+        !generatedText.isEmpty
     }
     
     // MARK: - Helper Methods
@@ -992,10 +1060,12 @@ struct EditScreenView: View {
                 let thought = try await apiManager.generateThought(topic: topic, value: value)
                 await MainActor.run {
                     generatedText = thought
+                    print("Successfully generated thought: \(thought)")
                 }
             } catch {
                 await MainActor.run {
                     showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
+                    print("Error generating thought: \(error)")
                 }
             }
         }
@@ -1004,38 +1074,37 @@ struct EditScreenView: View {
     private func generateAudio() {
         guard canGenerate else { return }
         
-        let audioData: Data
-        if let recordingData = audioManager.getRecordingData() {
-            audioData = recordingData
-        } else if let fileData = selectedAudioFile {
-            audioData = fileData
-        } else {
-            showErrorAlert("No hay audio disponible")
+        // Ensure we have the required parameters to generate audio
+        guard !topic.isEmpty, !value.isEmpty, !generatedText.isEmpty else {
+            showErrorAlert("Por favor, asegúrese de que el tema y el valor están definidos")
             return
         }
         
-        let request = VoiceGenerationRequest(
-            audioData: audioData,
-            text: generatedText,
-            stability: stability,
-            similarityBoost: similarityBoost,
-            addBackground: addBackground,
-            backgroundVolume: backgroundVolume
-        )
-        
         isLoading = true
+        print("Generando audio con topic: \(topic), value: \(value)")
         
         Task {
             do {
-                let result = try await apiManager.generateVoiceClone(request: request)
+                // Use the Python backend to generate audio from topic and value
+                let result = try await apiManager.generateAudioWithClonedVoice(
+                    topic: topic,
+                    value: value,
+                    stability: stability,
+                    similarityBoost: similarityBoost
+                )
+                
                 await MainActor.run {
                     generatedAudioData = result
                     isLoading = false
+                    print("Successfully received audio data: \(result.count) bytes")
+                    
+                    // Opcionalmente podemos reproducir el audio automáticamente aquí
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    showErrorAlert("Error al generar el audio: \(error.localizedDescription)")
+                    showErrorAlert("Error al generar audio: \(error.localizedDescription)")
+                    print("Error generating audio: \(error)")
                 }
             }
         }

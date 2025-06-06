@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Cloning - Eleven Labs</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #34495e;
+            font-size: 1.1em;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+        
+        .btn:hover {
+            background: linear-gradient(45deg, #2980b9, #1abc9c);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e8f5e8;
+            border-radius: 8px;
+            border-left: 5px solid #27ae60;
+            display: none;
+        }
+        
+        .error {
+            background: #fdf2f2;
+            border-left-color: #e74c3c;
+            color: #c0392b;
+        }
+        
+        audio {
+            width: 100%;
+            margin-top: 15px;
+        }
+        
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .info p {
+            margin: 0;
+            color: #1565c0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 AI Voice Cloning</h1>
+        
+        <div class="info">
+            <p><strong>¿Cómo funciona?</strong> Ingresa los dos campos necesarios y la IA generará un audio con una voz clonada que expresará un pensamiento relacionado con tus inputs.</p>
+        </div>
+        
+        <form id="voiceForm">
+            <div class="form-group">
+                <label for="topic">Tema para el pensamiento:</label>
+                <input type="text" id="topic" class="form-control" placeholder="Ej: miedos personales, películas, académico" required>
+            </div>
+
+            <div class="form-group">
+                <label for="value">Valor específico del tema:</label>
+                <input type="text" id="value" class="form-control" placeholder="Ej: arañas, Star Wars, saqué un 10 en mates" required>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #17a2b8;">
+                <label style="color: #17a2b8; font-weight: bold;">Ajustes avanzados (opcional):</label>
+                
+                <div class="form-group" style="margin-top: 20px; border-top: 1px solid #dee2e6; padding-top: 15px; background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <input type="checkbox" id="add_background" name="add_background" value="true" style="margin: 0; width: auto; transform: scale(1.2);">
+                        <label for="add_background" style="margin: 0; font-weight: bold; color: #17a2b8;">Añadir sonido de fondo</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="bg_volume" style="width: 150px; margin: 0;">Volumen del fondo:</label>
+                        <input type="range" id="bg_volume" name="bg_volume" min="0.0" max="1.0" step="0.05" value="0.2" style="flex-grow: 1;" disabled>
+                        <span id="bg_volume_value" style="width: 45px; text-align: center; font-weight: bold;">0.2</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn" id="generateBtn">
+                🚀 Generar Audio con IA
+            </button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Generando tu audio, por favor espera...</p>
+        </div>
+        
+        <div class="result" id="result">
+            <h3>✅ Audio generado exitosamente!</h3>
+            <p>Tu audio ha sido generado con la voz clonada:</p>
+            <audio controls id="audioPlayer"></audio>
+            <br><br>
+            <a id="downloadLink" class="btn" style="display: inline-block; text-decoration: none; text-align: center;">
+                📥 Descargar Audio
+            </a>
+        </div>
+        
+        <div class="result error" id="error" style="display: none;">
+            <h3>❌ Error</h3>
+            <p id="errorMessage"></p>
+        </div>
+    </div>
+
+    <script>
+        // Verify API key on page load
+        async function verifyApiKey() {
+            try {
+                const response = await fetch('/verify-api');
+                if (!response.ok) {
+                    showError('❌ Error de API: Verifica tu API key de Eleven Labs en el archivo .env');
+                    document.getElementById('generateBtn').disabled = true;
+                }
+            } catch (error) {
+                console.warn('Could not verify API key:', error);
+                showError('❌ Error de conexión al verificar API. Intenta de nuevo.');
+                document.getElementById('generateBtn').disabled = true;
+            }
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', verifyApiKey);
+        
+        // Inicializar controles de sonido de fondo
+        document.getElementById('bg_volume').addEventListener('input', function() {
+            document.getElementById('bg_volume_value').textContent = this.value;
+        });
+        
+        document.getElementById('add_background').addEventListener('change', function() {
+            document.getElementById('bg_volume').disabled = !this.checked;
+        });
+
+        // Form submission
+        document.getElementById('voiceForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            const topic = document.getElementById('topic').value.trim();
+            const value = document.getElementById('value').value.trim();
+            
+            if (!topic || !value) {
+                showError('Por favor, completa ambos campos (tema y valor).');
+                return;
+            }
+            
+            // Preparar los datos para la solicitud
+            const formData = new FormData();
+            formData.append('topic', topic);
+            formData.append('value', value);
+            
+            // Añadir parámetros de sonido de fondo
+            const addBackground = document.getElementById('add_background').checked;
+            formData.append('add_background', addBackground);
+            
+            if (addBackground) {
+                const bgVolume = document.getElementById('bg_volume').value;
+                formData.append('bg_volume', bgVolume);
+            }
+            
+            // Mostrar el indicador de carga
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            
+            try {
+                const response = await fetch('/generate-audio', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const audioUrl = URL.createObjectURL(blob);
+                    
+                    document.getElementById('audioPlayer').src = audioUrl;
+                    document.getElementById('downloadLink').href = audioUrl;
+                    document.getElementById('downloadLink').download = 'audio_generado.mp3';
+                    document.getElementById('result').style.display = 'block';
+                } else {
+                    try {
+                        const errorData = await response.json();
+                        showError(errorData.error || 'Error al generar el audio');
+                    } catch (e) {
+                        showError('Error al generar el audio');
+                    }
+                }
+            } catch (error) {
+                showError('Error de conexión: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('generateBtn').disabled = false;
+            }
+        });
+        
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
