@@ -974,12 +974,19 @@ struct EditScreenView: View {
     @ObservedObject var apiManager: VoiceAPIManager // Changed to ObservedObject and passed in
     let onBackTapped: (RecordingData?) -> Void
     
+    // Define AutoGenerationState enum
+    enum AutoGenerationState {
+        case idle
+        case generatingThought
+        case generatingAudio // Added if needed for more granular control, or simplify if not
+    }
+    
     @State private var topic = ""
     @State private var value = ""
     @State private var generatedText = ""
     @State private var stability: Double = 0.7
     @State private var similarityBoost: Double = 0.85
-    @State private var addBackground = false
+    @State private var addBackground = false // Defaulted to false as per original, can be true if desired
     @State private var backgroundVolume: Double = 0.2
     
     @State private var isLoading = false
@@ -989,6 +996,7 @@ struct EditScreenView: View {
     @State private var generatedAudioData: Data?
     @State private var showDocumentPicker = false
     @State private var selectedAudioFile: Data?
+    @State private var autoGenerationState: AutoGenerationState = .idle // Added state variable
     
     var body: some View {
         NavigationView {
@@ -1031,9 +1039,9 @@ struct EditScreenView: View {
                     infoView
                     textInputSection
                     advancedSettingsSection
-                    regenerateButton // Added for re-generation
+                    generateButton // Replaced regenerateButton with generateButton
                     
-                    if isLoading { // This is EditScreenView's own isLoading
+                    if isLoading { // This is EditScreenView\'s own isLoading
                         loadingView
                     }
                     
@@ -1048,21 +1056,8 @@ struct EditScreenView: View {
                 self.topic = selectedButton // Initialize topic from passed prop
                 self.value = inputText    // Initialize value from passed prop
             }
-            .task {
-                // Directly call apiManager's method and handle potential error
-                do {
-                    let isValid = try await apiManager.verifyAPIKey()
-                    if !isValid {
-                        // Consider how to display this error, perhaps using existing showErrorAlert
-                        // For now, just printing. If EditScreenView has its own error display, use that.
-                        print("EditScreenView: API Key is invalid or verification failed.")
-                        // You might want to set a local error state here if EditScreenView needs to react.
-                        // Example: showErrorAlert("API Key is invalid or verification failed.")
-                    }
-                } catch {
-                    print("EditScreenView: Could not verify API key: \\\\(error.localizedDescription)")
-                    // Example: showErrorAlert("Could not verify API key: \\\\(error.localizedDescription)")
-                }
+            .task { // Modified .task block
+                await performAPIVerification() // Call the new helper
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -1344,7 +1339,10 @@ struct EditScreenView: View {
     }
     
     // MARK: - Computed Properties
-    // Removed: private var canGenerate: Bool { ... }
+    // Restored canGenerate computed property
+    private var canGenerate: Bool {
+        !topic.isEmpty && !value.isEmpty && !generatedText.isEmpty && !isLoading
+    }
     
     // MARK: - Helper Methods
     private func formatTime(_ time: TimeInterval) -> String {
@@ -1361,21 +1359,24 @@ struct EditScreenView: View {
     private func generateThoughtIfReady() {
         guard !topic.isEmpty && !value.isEmpty else {
             generatedText = ""
-            autoGenerationState = .idle
+            autoGenerationState = .idle // Ensure this is set
             return
         }
         
+        autoGenerationState = .generatingThought // Set state before task
         Task {
             do {
                 let thought = try await apiManager.generateThought(topic: topic, value: value)
                 await MainActor.run {
                     generatedText = thought
-                    print("Successfully generated thought: \(thought)")
+                    autoGenerationState = .idle // Reset state on success
+                    print("Successfully generated thought: \\(thought)")
                 }
             } catch {
                 await MainActor.run {
-                    showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
-                    print("Error generating thought: \(error)")
+                    showErrorAlert("Error al generar el pensamiento: \\(error.localizedDescription)")
+                    autoGenerationState = .idle // Reset state on error
+                    print("Error generating thought: \\(error)")
                 }
             }
         }
@@ -1419,6 +1420,27 @@ struct EditScreenView: View {
         }
     }
     
+    // New private async function to handle API verification within .task
+    private func performAPIVerification() async {
+        do {
+            let isValid = try await apiManager.verifyAPIKey()
+            if !isValid {
+                // Ensure UI updates are on the main actor, though showErrorAlert might handle this
+                await MainActor.run {
+                    showErrorAlert("API Key is invalid or verification failed.")
+                }
+                print("EditScreenView: API Key is invalid or verification failed.")
+            }
+        } catch {
+            await MainActor.run {
+                showErrorAlert("Could not verify API key: \\(error.localizedDescription)")
+            }
+            print("EditScreenView: Could not verify API key: \\(error.localizedDescription)")
+        }
+    }
+    
+    // This function seems redundant now with performAPIVerification.
+    // Consider removing it if it's not called from anywhere else.
     private func verifyAPI() async {
         do {
             let isValid = try await apiManager.verifyAPIKey()
@@ -1426,6 +1448,10 @@ struct EditScreenView: View {
                 await MainActor.run {
                     showErrorAlert("❌ API Key inválida. Por favor verifica tu configuración del servidor.")
                 }
+            }
+        } catch { // Added missing catch block
+             await MainActor.run {
+                showErrorAlert("Error during API verification: \\(error.localizedDescription)")
             }
         }
     }
