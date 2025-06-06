@@ -63,8 +63,11 @@ struct ButtonSelectionView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            
+            Image("backgroundImage") // Replace "backgroundImage" with your image name
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .ignoresSafeArea()
+                
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
                 ForEach(Array(buttonTitles.enumerated()), id: \.offset) { index, title in
                     Button(action: {
@@ -75,7 +78,7 @@ struct ButtonSelectionView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.gray.opacity(0.3))
+                            .background(Color.gray.opacity(0.2))
                             .cornerRadius(12)
                     }
                     .frame(height: 120)
@@ -93,7 +96,10 @@ struct TextInputView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Image("backgroundImage") // Replace "backgroundImage" with your image name
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .ignoresSafeArea(.all, edges: .all)
             
             VStack(spacing: 30) {
                 Spacer()
