@@ -2,14 +2,6 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-struct VoiceMemosApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
-
 struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
@@ -638,6 +630,18 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
         return try? Data(contentsOf: url)
     }
     
+    func playData(_ data: Data) throws {
+        do {
+            audioPlayer = try AVAudioPlayer(data: data)
+            audioPlayer?.delegate = self
+            audioPlayer?.play()
+            isPlaying = true
+        } catch {
+            print("Error reproduciendo datos de audio: \(error)")
+            throw RecordingError.playbackFailed
+        }
+    }
+    
     // MARK: - AVAudioPlayerDelegate
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         isPlaying = false
@@ -662,11 +666,21 @@ struct EditScreenView: View {
     @State private var backgroundVolume: Double = 0.2
     
     @State private var isLoading = false
+    @State private var lastGenerationTask: Task<Void, Never>? = nil
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var generatedAudioData: Data?
     @State private var showDocumentPicker = false
     @State private var selectedAudioFile: Data?
+    @State private var autoGenerationState: AutoGenerationState = .idle
+    
+    enum AutoGenerationState {
+        case idle
+        case generatingThought
+        case generatingAudio
+        case complete
+        case error
+    }
     
     var body: some View {
         NavigationView {
@@ -882,19 +896,55 @@ struct EditScreenView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Valor específico del tema:")
-                    .font(.headline)
+                HStack {
+                    Text("Valor específico del tema:")
+                        .font(.headline)
+                    
+                    if autoGenerationState == .generatingThought {
+                        Text("Generando pensamiento...")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    } else if autoGenerationState == .generatingAudio {
+                        Text("Generando audio...")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    } else if autoGenerationState == .complete {
+                        Text("Audio generado ✓")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    
+                    Spacer()
+                }
                 
                 TextField("Ej: arañas, Star Wars, el clima de hoy", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .onChange(of: value) { _ in
                         generateThoughtIfReady()
                     }
+                    .overlay(
+                        autoGenerationState == .generatingThought || autoGenerationState == .generatingAudio ?
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .padding(.trailing, 8)
+                            } : nil
+                    )
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Texto que quieres que diga la IA (generado):")
-                    .font(.headline)
+                HStack {
+                    Text("Texto que quieres que diga la IA (generado):")
+                        .font(.headline)
+                    
+                    if autoGenerationState == .generatingThought {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                    
+                    Spacer()
+                }
                 
                 TextEditor(text: $generatedText)
                     .frame(minHeight: 100)
@@ -902,6 +952,16 @@ struct EditScreenView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
                     .disabled(true)
+                    .overlay(
+                        ZStack {
+                            // Mostrar un mensaje si no hay texto generado
+                            if generatedText.isEmpty && (topic.isEmpty || value.isEmpty) {
+                                Text("Completa el tema y valor para generar texto")
+                                    .foregroundColor(.secondary)
+                                    .padding()
+                            }
+                        }
+                    )
             }
         }
     }
@@ -976,16 +1036,64 @@ struct EditScreenView: View {
     }
     
     private var generateButton: some View {
-        Button("🚀 Generar Audio con IA") {
-            generateAudio()
+        VStack {
+            // Mostramos información sobre la generación automática
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.blue)
+                
+                Text("El audio se genera automáticamente al completar el tema y valor")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 5)
+            
+            // Mostramos diferentes botones según el estado
+            Group {
+                if autoGenerationState == .generatingThought || autoGenerationState == .generatingAudio {
+                    Button(action: {}) {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .padding(.trailing, 5)
+                            
+                            Text(autoGenerationState == .generatingThought ? "Generando pensamiento..." : "Generando audio...")
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue.opacity(0.7))
+                    .cornerRadius(10)
+                    .disabled(true)
+                } else if autoGenerationState == .complete {
+                    Button("🔄 Regenerar Audio") {
+                        generateAudio()
+                    }
+                    .foregroundColor(.white)
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(canGenerate ? Color.blue : Color.gray)
+                    .cornerRadius(10)
+                    .disabled(!canGenerate || isLoading)
+                } else {
+                    Button("Generar Audio") {
+                        generateAudio()
+                    }
+                    .foregroundColor(.white)
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(canGenerate ? Color.blue : Color.gray)
+                    .cornerRadius(10)
+                    .disabled(!canGenerate || isLoading)
+                }
+            }
         }
-        .foregroundColor(.white)
-        .font(.headline)
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(canGenerate ? Color.blue : Color.gray)
-        .cornerRadius(10)
-        .disabled(!canGenerate || isLoading)
     }
     
     private var loadingView: some View {
@@ -993,39 +1101,80 @@ struct EditScreenView: View {
             ProgressView()
                 .scaleEffect(1.5)
             
-            Text("Entrenando la IA con tu voz y generando el audio...")
+            Text("Generando audio automáticamente...")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                
+            Text("Esto puede tardar unos segundos")
+                .font(.caption)
+                .foregroundColor(.gray)
         }
         .padding()
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(10)
     }
     
     private func resultView(audioData: Data) -> some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("✅ Audio generado exitosamente!")
-                .font(.headline)
-                .foregroundColor(.green)
+            HStack {
+                Text("✅ Audio generado automáticamente!")
+                    .font(.headline)
+                    .foregroundColor(.green)
+                
+                Spacer()
+                
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.title3)
+            }
+            
+            Divider()
             
             Text("Tu audio ha sido generado con la voz clonada:")
                 .foregroundColor(.secondary)
             
             AudioPlayerView(audioData: audioData)
             
-            ShareLink(item: audioData, preview: SharePreview("Audio clonado", image: Image(systemName: "waveform"))) {
-                HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Compartir Audio")
+            HStack {
+                Button(action: {
+                    // Reproducir el audio nuevamente
+                    do {
+                        try audioManager.playData(audioData)
+                    } catch {
+                        showErrorAlert("Error al reproducir audio: \(error.localizedDescription)")
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "play.circle.fill")
+                        Text("Reproducir de nuevo")
+                    }
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue)
+                    .cornerRadius(8)
                 }
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.green)
-                .cornerRadius(8)
+                
+                ShareLink(item: audioData, preview: SharePreview("Audio clonado", image: Image(systemName: "waveform"))) {
+                    HStack {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Compartir")
+                    }
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.green)
+                    .cornerRadius(8)
+                }
             }
         }
         .padding()
         .background(Color.green.opacity(0.1))
         .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+        )
     }
     
     // MARK: - Computed Properties
@@ -1050,22 +1199,54 @@ struct EditScreenView: View {
     }
     
     private func generateThoughtIfReady() {
+        // Cancelar cualquier tarea de generación en curso
+        lastGenerationTask?.cancel()
+        
         guard !topic.isEmpty && !value.isEmpty else {
             generatedText = ""
+            autoGenerationState = .idle
             return
         }
         
-        Task {
+        // Actualizar estado para indicar que estamos generando el pensamiento
+        autoGenerationState = .generatingThought
+        
+        // Crear una nueva tarea con un pequeño retraso
+        lastGenerationTask = Task {
+            // Añadir un pequeño retraso para evitar múltiples llamadas mientras el usuario escribe
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+            
+            // Comprobar si la tarea fue cancelada
+            if Task.isCancelled {
+                return
+            }
+            
             do {
-                let thought = try await apiManager.generateThought(topic: topic, value: value)
+                let currentTopic = topic // Capturar los valores actuales
+                let currentValue = value
+                
+                print("Generando pensamiento para topic: \(currentTopic), value: \(currentValue)")
+                let thought = try await apiManager.generateThought(topic: currentTopic, value: currentValue)
+                
                 await MainActor.run {
-                    generatedText = thought
-                    print("Successfully generated thought: \(thought)")
+                    // Verificar que el tema y valor no han cambiado mientras se generaba el pensamiento
+                    if topic == currentTopic && value == currentValue {
+                        generatedText = thought
+                        print("Successfully generated thought: \(thought)")
+                        
+                        // Generar audio automáticamente cuando se recibe el texto del pensamiento
+                        if !isLoading {
+                            generateAudio()
+                        }
+                    }
                 }
             } catch {
-                await MainActor.run {
-                    showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
-                    print("Error generating thought: \(error)")
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        autoGenerationState = .error
+                        showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
+                        print("Error generating thought: \(error)")
+                    }
                 }
             }
         }
@@ -1077,10 +1258,17 @@ struct EditScreenView: View {
         // Ensure we have the required parameters to generate audio
         guard !topic.isEmpty, !value.isEmpty, !generatedText.isEmpty else {
             showErrorAlert("Por favor, asegúrese de que el tema y el valor están definidos")
+            autoGenerationState = .error
+            return
+        }
+        
+        // Evitar múltiples solicitudes simultáneas
+        if isLoading {
             return
         }
         
         isLoading = true
+        autoGenerationState = .generatingAudio
         print("Generando audio con topic: \(topic), value: \(value)")
         
         Task {
@@ -1096,13 +1284,22 @@ struct EditScreenView: View {
                 await MainActor.run {
                     generatedAudioData = result
                     isLoading = false
+                    autoGenerationState = .complete
                     print("Successfully received audio data: \(result.count) bytes")
                     
-                    // Opcionalmente podemos reproducir el audio automáticamente aquí
+                    // Reproducir el audio automáticamente
+                    if let audioData = generatedAudioData {
+                        do {
+                            try audioManager.playData(audioData)
+                        } catch {
+                            print("Error reproduciendo audio generado: \(error)")
+                        }
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
+                    autoGenerationState = .error
                     showErrorAlert("Error al generar audio: \(error.localizedDescription)")
                     print("Error generating audio: \(error)")
                 }
