@@ -14,7 +14,10 @@ struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
     @State private var currentScreen: AppScreen = .buttonSelection
-    
+    @State private var generatedRecording: RecordingData? = nil
+    @StateObject private var apiManager = VoiceAPIManager() // Added
+    @State private var generationError: String? = nil // Added for error display
+
     enum AppScreen {
         case buttonSelection
         case textInput
@@ -23,31 +26,162 @@ struct ContentView: View {
     }
     
     var body: some View {
-        switch currentScreen {
-        case .buttonSelection:
-            ButtonSelectionView(selectedButton: $selectedButton) {
-                currentScreen = .textInput
-            }
-        case .textInput:
-            TextInputView(inputText: $inputText) {
-                currentScreen = .voiceMemos
-            }
-        case .voiceMemos:
-            VoiceMemosView(
-                selectedButton: selectedButton,
-                inputText: inputText,
-                onEditTapped: {
-                    currentScreen = .editScreen
+        ZStack { // Added ZStack for potential global loading/error overlay
+            switch currentScreen {
+            case .buttonSelection:
+                ButtonSelectionView(selectedButton: $selectedButton) {
+                    currentScreen = .textInput
                 }
-            )
-        case .editScreen:
-            EditScreenView(
-                selectedButton: selectedButton,
-                inputText: inputText,
-                onBackTapped: {
-                    currentScreen = .voiceMemos
+            case .textInput:
+                TextInputView(inputText: $inputText) {
+                    // Instead of direct navigation, call generation function
+                    generateAudioFromInputs()
                 }
-            )
+            case .voiceMemos:
+                VoiceMemosView(
+                    selectedButton: selectedButton,
+                    inputText: inputText,
+                    generatedRecording: generatedRecording,
+                    onEditTapped: {
+                        currentScreen = .editScreen
+                    }
+                )
+            case .editScreen:
+                EditScreenView(
+                    selectedButton: selectedButton,
+                    inputText: inputText,
+                    apiManager: apiManager, // Pass apiManager
+                    onBackTapped: { newRecording in
+                        if let newRecording = newRecording {
+                            generatedRecording = newRecording
+                        }
+                        currentScreen = .voiceMemos
+                    }
+                )
+            }
+
+            if let error = generationError { // Global error display
+                VStack {
+                    Text("Error")
+                        .font(.headline)
+                    Text(error)
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                    Button("OK") {
+                        generationError = nil
+                    }
+                    .padding(.top)
+                }
+                .padding()
+                .background(Color.red.opacity(0.8))
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .frame(maxWidth: 300)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    // Helper function to format date (copied from VoiceMemosView/EditScreenView)
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    // Helper function to estimate duration (copied from EditScreenView)
+    private func estimateDuration(from audioData: Data) -> String {
+        do {
+            let player = try AVAudioPlayer(data: audioData)
+            let seconds = Int(player.duration) // Ensure seconds is Int
+            return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+        } catch {
+            // Assuming 16kHz, 16-bit mono audio, so 16000 bytes/second for 8-bit, or 32000 for 16-bit.
+            // Let's adjust if this is mono 16-bit, which is common.
+            // If it's 16-bit (2 bytes per sample) and mono (1 channel) at 16kHz:
+            // Bytes per second = 16000 samples/sec * 1 channel * 2 bytes/sample = 32000 bytes/sec
+            // If the backend provides 16kHz mono PCM s16le, then this should be audioData.count / 32000
+            // For now, let's assume the previous 16000 was a placeholder or for 8-bit.
+            // Given the context of voice memos, 16kHz mono is plausible.
+            // If the backend standardizes on, say, 24000 Hz, 16-bit, mono for ElevenLabs, then it's 48000 bytes/sec.
+            // Let's stick to a more common voice memo rate or make it configurable if possible.
+            // For a rough estimate, if it's raw PCM data.
+            // A common rate for voice is 16kHz, 16-bit mono. Bytes per second = 16000 * 2 = 32000.
+            // If the backend output is MP3 or another compressed format, this calculation is incorrect.
+            // However, the AVAudioPlayer path is preferred. This is just a fallback.
+            // Let's assume the 16000 was for a specific 8-bit scenario or a rough estimate.
+            // To be safer, if we don't know the format, this estimation is very rough.
+            // Let's use a more standard estimate for 16-bit mono audio at 16kHz
+            let bytesPerSecondEstimate = 32000 // 16000 samples/sec * 2 bytes/sample (for 16-bit mono)
+            let estimatedSeconds = audioData.count / bytesPerSecondEstimate // This will be Int
+            return "\(estimatedSeconds / 60):\(String(format: "%02d", estimatedSeconds % 60))"
+        }
+    }
+
+    func generateAudioFromInputs() {
+        guard !selectedButton.isEmpty, !inputText.isEmpty else {
+            // If inputs are not valid, just navigate without generation
+            currentScreen = .voiceMemos
+            return
+        }
+
+        // isLoadingAudio = true // Removed
+        generationError = nil // Clear previous errors
+
+        let pendingRecordingID = UUID() // Create a unique ID for this recording upfront
+        let placeholderTitle = "Strange Dream"
+        
+        // Create and set a placeholder recording immediately
+        let placeholderRecording = RecordingData(
+            id: pendingRecordingID,
+            title: placeholderTitle,
+            date: formattedDate(Date()),
+            duration: "--:--"
+        )
+        self.generatedRecording = placeholderRecording
+
+        // Navigate to VoiceMemosView immediately
+        currentScreen = .voiceMemos
+        print("ContentView: Navigated to VoiceMemosView, starting audio generation in background.")
+
+        Task {
+            do {
+                print("ContentView: Starting audio generation with topic: \(selectedButton), value: \(inputText)")
+                let audioData = try await apiManager.generateAudioWithClonedVoice(
+                    topic: selectedButton,
+                    value: inputText
+                )
+                
+                let finalRecording = RecordingData(
+                    id: pendingRecordingID, // Use the same ID
+                    title: "Strange Dream",
+                    date: formattedDate(Date()),
+                    duration: estimateDuration(from: audioData),
+                    audioData: audioData
+                )
+                
+                await MainActor.run {
+                    self.generatedRecording = finalRecording // Update the recording
+                    // isLoadingAudio = false // Removed
+                    print("ContentView: Audio generation successful, recording updated.")
+                }
+            } catch {
+                await MainActor.run {
+                    // isLoadingAudio = false // Removed
+                    let errorMsg = "Failed: \(error.localizedDescription)"
+                    self.generationError = errorMsg
+                    print("ContentView: Error generating audio: \(errorMsg)")
+                    
+                    // Optionally, update the placeholder to show an error state
+                    let errorRecording = RecordingData(
+                        id: pendingRecordingID, // Use the same ID
+                        title: "Error: \(selectedButton) - \(inputText.prefix(20))...",
+                        date: formattedDate(Date()),
+                        duration: "Error"
+                    )
+                    self.generatedRecording = errorRecording
+                }
+            }
         }
     }
 }
@@ -122,9 +256,38 @@ struct TextInputView: View {
     }
 }
 
+
+
+// Enhanced RecordingData struct to handle both file-based and data-based recordings
+struct RecordingData: Identifiable, Equatable {
+    let id: UUID // Changed: id is now a let constant, will be initialized
+    let title: String
+    let date: String
+    let duration: String
+    var audioData: Data? = nil
+    
+    // Added initializer to control ID
+    init(id: UUID = UUID(), title: String, date: String, duration: String, audioData: Data? = nil) {
+        self.id = id
+        self.title = title
+        self.date = date
+        self.duration = duration
+        self.audioData = audioData
+    }
+    
+    static func == (lhs: RecordingData, rhs: RecordingData) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.title == rhs.title &&
+               lhs.date == rhs.date &&
+               lhs.duration == rhs.duration &&
+               lhs.audioData == rhs.audioData // Data is Equatable
+    }
+}
+
 struct VoiceMemosView: View {
     let selectedButton: String
     let inputText: String
+    let generatedRecording: RecordingData?
     let onEditTapped: () -> Void
     
     @State private var showingPeek = false
@@ -133,11 +296,33 @@ struct VoiceMemosView: View {
     @State private var isPlaying = false
     @State private var currentTime = 0.0
     @State private var totalTime = 15.0
+    @State private var audioPlayer: AVAudioPlayer? = nil
     
-    func formattedDate(_ date: Date) -> String {
+    // Added helper function
+    private func formattedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter.string(from: date)
+    }
+
+    var recordings: [RecordingData] {
+        var result = [
+            RecordingData(title: "Carrer dels Ametllers, 9 24", date: formattedDate(Date()), duration: "0:15"),
+            RecordingData(title: "Carrer dels Ametllers, 9 23", date: "14 Apr 2024", duration: "0:10"),
+            RecordingData(title: "Ark Hills 2", date: "4 Oct 2023", duration: "0:06"),
+            RecordingData(title: "Ark Hills", date: "4 Oct 2023", duration: "0:04"),
+            RecordingData(title: "Carrer dels Ametllers, 9 22", date: "23 Feb 2023", duration: "0:31"),
+            RecordingData(title: "Carrer dels Ametllers, 9 21", date: "23 Feb 2023", duration: "0:30"),
+            RecordingData(title: "Carrer dels Ametllers, 9 20", date: "9 Feb 2023", duration: "0:27"),
+            RecordingData(title: "Carrer dels Ametllers, 9 19", date: "9 Feb 2023", duration: "0:28")
+        ]
+        
+        // Insert the generated recording at the beginning if available
+        if let generatedRecording = generatedRecording {
+            result.insert(generatedRecording, at: 0)
+        }
+        
+        return result
     }
     
     var body: some View {
@@ -211,37 +396,37 @@ struct VoiceMemosView: View {
                     // Recordings List
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            let recordings = [
-                                RecordingData(title: "Carrer dels Ametllers, 9 24", date: formattedDate(Date()), duration: "0:15"),
-                                RecordingData(title: "Carrer dels Ametllers, 9 23", date: "14 Apr 2024", duration: "0:10"),
-                                RecordingData(title: "Ark Hills 2", date: "4 Oct 2023", duration: "0:06"),
-                                RecordingData(title: "Ark Hills", date: "4 Oct 2023", duration: "0:04"),
-                                RecordingData(title: "Carrer dels Ametllers, 9 22", date: "23 Feb 2023", duration: "0:31"),
-                                RecordingData(title: "Carrer dels Ametllers, 9 21", date: "23 Feb 2023", duration: "0:30"),
-                                RecordingData(title: "Carrer dels Ametllers, 9 20", date: "9 Feb 2023", duration: "0:27"),
-                                RecordingData(title: "Carrer dels Ametllers, 9 19", date: "9 Feb 2023", duration: "0:28")
-                            ]
-                            
                             ForEach(recordings.indices, id: \.self) { index in
                                 VStack(spacing: 0) {
                                     RecordingRow(
                                         recording: recordings[index],
-                                        isSelected: selectedRecording?.title == recordings[index].title,
+                                        isSelected: selectedRecording?.id == recordings[index].id,
                                         isPlaying: isPlaying,
                                         currentTime: currentTime,
                                         totalTime: totalTime,
                                         onTap: { recording in
-                                            if selectedRecording?.title == recording.title {
+                                            if selectedRecording?.id == recording.id {
                                                 selectedRecording = nil
+                                                stopPlayback()
                                             } else {
                                                 selectedRecording = recording
                                                 totalTime = parseDuration(recording.duration)
                                                 currentTime = 0
                                                 isPlaying = false
+                                                
+                                                // Prepare audio player if we have audio data
+                                                if let audioData = recording.audioData {
+                                                    prepareAudioPlayer(with: audioData)
+                                                }
                                             }
                                         },
-                                        onPlay: { togglePlayback() },
-                                        onDelete: { selectedRecording = nil }
+                                        onPlay: {
+                                            togglePlayback(for: recordings[index])
+                                        },
+                                        onDelete: {
+                                            selectedRecording = nil
+                                            stopPlayback()
+                                        }
                                     )
                                     
                                     // Add separator line between recordings, but not after the last one
@@ -302,7 +487,57 @@ struct VoiceMemosView: View {
         .navigationViewStyle(StackNavigationViewStyle())
     }
     
-    private func togglePlayback() {
+    private func prepareAudioPlayer(with data: Data) {
+        do {
+            audioPlayer = try AVAudioPlayer(data: data)
+            audioPlayer?.prepareToPlay()
+            if let duration = audioPlayer?.duration {
+                totalTime = duration
+            }
+        } catch {
+            print("Error creating audio player: \(error.localizedDescription)")
+        }
+    }
+    
+    private func togglePlayback(for recording: RecordingData) {
+        // If we have audio data for this recording, use it
+        if let audioData = recording.audioData {
+            if audioPlayer == nil {
+                prepareAudioPlayer(with: audioData)
+            }
+            
+            if isPlaying {
+                audioPlayer?.pause()
+                isPlaying = false
+            } else {
+                do {
+                    try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+                } catch {
+                    print("VoiceMemosView: Failed to override output port to speaker: \\(error.localizedDescription)")
+                }
+                audioPlayer?.play()
+                isPlaying = true
+                
+                // Start a timer to update the progress
+                Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                    if let player = audioPlayer, player.isPlaying {
+                        currentTime = player.currentTime
+                    } else {
+                        timer.invalidate()
+                        if currentTime >= totalTime {
+                            isPlaying = false
+                            currentTime = 0
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fall back to the original simulation for recordings without audio data
+            togglePlaybackSimulation()
+        }
+    }
+    
+    private func togglePlaybackSimulation() {
         isPlaying.toggle()
         if isPlaying {
             // Simulate playback progress
@@ -320,6 +555,13 @@ struct VoiceMemosView: View {
         }
     }
     
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlaying = false
+        currentTime = 0
+    }
+    
     private func parseDuration(_ duration: String) -> Double {
         let components = duration.split(separator: ":")
         if components.count == 2 {
@@ -330,6 +572,7 @@ struct VoiceMemosView: View {
         return 0
     }
 }
+
 
 // MARK: - Models
 struct VoiceGenerationRequest {
@@ -347,157 +590,222 @@ struct ThoughtRequest {
 }
 
 // MARK: - Network Manager
+@MainActor // Add @MainActor here
 class VoiceAPIManager: ObservableObject {
-    private let baseURL = "http://localhost:5002" // Connect to the Python backend running on port 5002
+    @Published var apiKeyVerified: Bool? = nil
+    @Published var isLoading: Bool = false
+    @Published var errorMessage: String? = nil
+    @Published var generatedAudioURL: URL? = nil
+    @Published var connectionStatus: ConnectionStatus = .unknown // Added this line
+
+    private var baseURL = "http://192.168.1.51:5002" // Changed to Mac's IP
+    private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
+    private let apiKey = "test_api_key" // Replace with your actual API key if needed
+
+    enum ConnectionStatus {
+        case unknown
+        case connected
+        case failed
+    }
     
     func verifyAPIKey() async throws -> Bool {
-        guard let url = URL(string: "\(baseURL)/verify-api") else {
+        // Try the primary URL first
+        do {
+            let result = try await verifyAPIWithURL(baseURL)
+            // No need for DispatchQueue.main.async here anymore because the whole class is @MainActor
+            self.connectionStatus = .connected
+            return result
+        } catch {
+            print("Primary URL failed: \(error.localizedDescription)")
+            
+            // If primary URL fails, try fallbacks
+            for fallbackURL in fallbackURLs {
+                print("Primary URL failed, trying fallback: \(fallbackURL)")
+                do {
+                    let result = try await verifyAPIWithURL(fallbackURL)
+                    // No need for DispatchQueue.main.async here anymore
+                    self.connectionStatus = .connected
+                    return result
+                } catch {
+                    print("Fallback URL \(fallbackURL) failed: \(error.localizedDescription)")
+                }
+            }
+            
+            // If all URLs fail, update status and throw error
+            // No need for DispatchQueue.main.async here anymore
+            self.connectionStatus = .failed
+            throw NetworkError.connectionFailed
+        }
+    }
+    
+    private func verifyAPIWithURL(_ urlString: String) async throws -> Bool {
+        guard let url = URL(string: "\(urlString)/verify-api") else {
             throw NetworkError.invalidURL
         }
         
-        let (_, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.invalidResponse
-        }
+        print("Attempting to verify API at: \(url.absoluteString)")
         
-        return httpResponse.statusCode == 200
+        // Create a URLRequest to have more control over the request
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10 // Set a reasonable timeout
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.invalidResponse
+            }
+            
+            print("API verification response: \(httpResponse.statusCode)")
+            return httpResponse.statusCode == 200
+        } catch {
+            print("API verification error: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     func generateThought(topic: String, value: String) async throws -> String {
+        // Try primary URL first
+        do {
+            return try await generateThoughtWithURL(baseURL, topic: topic, value: value)
+        } catch {
+            print("Primary URL failed for thought generation: \(error.localizedDescription)")
+            
+            // Try fallbacks
+            for fallbackURL in fallbackURLs {
+                do {
+                    return try await generateThoughtWithURL(fallbackURL, topic: topic, value: value)
+                } catch {
+                    print("Fallback URL \(fallbackURL) failed for thought generation: \(error.localizedDescription)")
+                }
+            }
+            
+            // If all URLs fail, throw the error
+            throw error
+        }
+    }
+    
+    private func generateThoughtWithURL(_ urlString: String, topic: String, value: String) async throws -> String {
         guard let encodedTopic = topic.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(baseURL)/generate-thought?topic=\(encodedTopic)&value=\(encodedValue)") else {
+              let url = URL(string: "\(urlString)/generate-thought?topic=\(encodedTopic)&value=\(encodedValue)") else {
             throw NetworkError.invalidURL
         }
         
         print("Requesting thought from: \(url.absoluteString)")
         
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            print("Invalid HTTP response")
-            throw NetworkError.invalidResponse
-        }
-        
-        if httpResponse.statusCode != 200 {
-            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let errorMsg = errorJson["error"] as? String {
-                print("Server error: \(errorMsg)")
-                throw NetworkError.serverError
-            }
-            throw NetworkError.serverError
-        }
+        // Create a URLRequest to have more control over the request
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15 // Set a reasonable timeout
         
         do {
-            let thoughtResponse = try JSONDecoder().decode(ThoughtResponse.self, from: data)
-            return thoughtResponse.thought
-        } catch {
-            print("JSON decoding error: \(error)")
-            // Intenta extraer el mensaje directamente del JSON
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let thought = json["thought"] as? String {
-                return thought
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Invalid HTTP response")
+                throw NetworkError.invalidResponse
             }
-            throw NetworkError.decodingError
+            
+            if httpResponse.statusCode != 200 {
+                if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let errorMsg = errorJson["error"] as? String {
+                    print("Server error: \(errorMsg)")
+                    throw NetworkError.serverError(message: errorMsg)
+                }
+                throw NetworkError.serverError(message: "Unknown server error")
+            }
+            
+            do {
+                let thoughtResponse = try JSONDecoder().decode(ThoughtResponse.self, from: data)
+                return thoughtResponse.thought
+            } catch {
+                print("JSON decoding error: \(error)")
+                // Try to extract the message directly from the JSON
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let thought = json["thought"] as? String {
+                    return thought
+                }
+                throw NetworkError.decodingError
+            }
+        } catch {
+            print("Network error during thought generation: \(error.localizedDescription)")
+            throw error
         }
     }
     
-    func generateVoiceClone(request: VoiceGenerationRequest) async throws -> Data {
-        guard let url = URL(string: "\(baseURL)/generate") else {
-            throw NetworkError.invalidURL
+    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85, addBackground: Bool = true, backgroundVolume: Double = 0.5) async throws -> Data { // Added addBackground and backgroundVolume with defaults
+        // Try primary URL first
+        do {
+            return try await generateAudioWithURL(baseURL, topic: topic, value: value, stability: stability, similarityBoost: similarityBoost, addBackground: addBackground, backgroundVolume: backgroundVolume)
+        } catch {
+            print("Primary URL failed for audio generation: \(error.localizedDescription)")
+            
+            // Try fallbacks
+            for fallbackURL in fallbackURLs {
+                do {
+                    return try await generateAudioWithURL(fallbackURL, topic: topic, value: value, stability: stability, similarityBoost: similarityBoost, addBackground: addBackground, backgroundVolume: backgroundVolume)
+                } catch {
+                    print("Fallback URL \(fallbackURL) failed for audio generation: \(error.localizedDescription)")
+                }
+            }
+            // If all URLs fail, throw the error
+            throw error
         }
-        
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        
-        let boundary = UUID().uuidString
-        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        let formData = createMultipartFormData(boundary: boundary, request: request)
-        urlRequest.httpBody = formData
-        
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NetworkError.serverError
-        }
-        
-        return data
     }
     
-    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85) async throws -> Data {
+    private func generateAudioWithURL(_ urlString: String, topic: String, value: String, stability: Double, similarityBoost: Double, addBackground: Bool, backgroundVolume: Double) async throws -> Data { // Added addBackground and backgroundVolume
         // First, generate the thought
-        let thought = try await generateThought(topic: topic, value: value)
+        let thought = try await generateThoughtWithURL(urlString, topic: topic, value: value)
         
         print("Generated thought: \(thought)")
         
         // Now send request to generate audio from that thought
-        var request = URLRequest(url: URL(string: "\(baseURL)/generate-audio")!)
+        guard let url = URL(string: "\(urlString)/generate-audio") else {
+            throw NetworkError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30 // Set a longer timeout for audio generation
         
-        // Include the thought, topic, and value in the request
+        // Include the thought, topic, value, and background sound parameters in the request
         let requestBody: [String: Any] = [
+            "text": thought, // Assuming the backend expects the generated thought as 'text'
             "topic": topic,
             "value": value,
-            "text": thought,
             "stability": stability,
-            "similarity_boost": similarityBoost
+            "similarity_boost": similarityBoost,
+            "add_background": addBackground, // Pass to backend
+            "background_volume": backgroundVolume // Pass to backend
         ]
         
         print("Sending request to Python backend with: \(requestBody)")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            print("Invalid HTTP response")
-            throw NetworkError.invalidResponse
-        }
-        
-        if httpResponse.statusCode != 200 {
-            if let errorData = String(data: data, encoding: .utf8) {
-                print("Server error: \(errorData)")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("Invalid HTTP response")
+                throw NetworkError.invalidResponse
             }
-            throw NetworkError.serverError
+            
+            if httpResponse.statusCode != 200 {
+                if let errorData = String(data: data, encoding: .utf8) {
+                    print("Server error: \(errorData)")
+                    throw NetworkError.serverError(message: errorData)
+                }
+                throw NetworkError.serverError(message: "Unknown server error")
+            }
+            
+            print("Successfully received MP3 data from server: \(data.count) bytes")
+            return data
+        } catch {
+            print("Network error during audio generation: \(error.localizedDescription)")
+            throw error
         }
-        
-        print("Successfully received MP3 data from server: \(data.count) bytes")
-        return data
-    }
-    
-    private func createMultipartFormData(boundary: String, request: VoiceGenerationRequest) -> Data {
-        var formData = Data()
-        
-        // Audio file
-        formData.append("--\(boundary)\r\n".data(using: .utf8)!)
-        formData.append("Content-Disposition: form-data; name=\"audio\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
-        formData.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
-        formData.append(request.audioData)
-        formData.append("\r\n".data(using: .utf8)!)
-        
-        // Text
-        formData.append("--\(boundary)\r\n".data(using: .utf8)!)
-        formData.append("Content-Disposition: form-data; name=\"text\"\r\n\r\n".data(using: .utf8)!)
-        formData.append(request.text.data(using: .utf8)!)
-        formData.append("\r\n".data(using: .utf8)!)
-        
-        // Parameters
-        let parameters = [
-            "stability": String(request.stability),
-            "similarity_boost": String(request.similarityBoost),
-            "add_background": String(request.addBackground),
-            "bg_volume": String(request.backgroundVolume)
-        ]
-        
-        for (key, value) in parameters {
-            formData.append("--\(boundary)\r\n".data(using: .utf8)!)
-            formData.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
-            formData.append(value.data(using: .utf8)!)
-            formData.append("\r\n".data(using: .utf8)!)
-        }
-        
-        formData.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        return formData
     }
 }
+
+
 
 // MARK: - Response Models
 struct ThoughtResponse: Codable {
@@ -508,22 +816,26 @@ struct ThoughtResponse: Codable {
 enum NetworkError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
-    case serverError
+    case serverError(message: String)
     case decodingError
+    case connectionFailed
     
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "URL inválida"
+            return "Invalid URL"
         case .invalidResponse:
-            return "Respuesta inválida del servidor"
-        case .serverError:
-            return "Error del servidor"
+            return "Invalid response from server"
+        case .serverError(let message):
+            return "Server error: \(message)"
         case .decodingError:
-            return "Error al decodificar respuesta del servidor"
+            return "Error decoding server response"
+        case .connectionFailed:
+            return "Failed to connect to the server. Please ensure the Python backend is running."
         }
     }
 }
+
 
 enum RecordingError: Error, LocalizedError {
     case permissionDenied
@@ -533,11 +845,11 @@ enum RecordingError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            return "Permiso de micrófono denegado"
+            return "Microphone permission denied"
         case .recordingFailed:
-            return "Error al grabar audio"
+            return "Error recording audio"
         case .playbackFailed:
-            return "Error al reproducir audio"
+            return "Error playing audio"
         }
     }
 }
@@ -619,6 +931,13 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
         guard let url = recordingURL else { return }
         
         do {
+            // Add this before playing
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+        } catch {
+            print("AudioManager: Failed to override output port to speaker: \\(error.localizedDescription)")
+        }
+        
+        do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.delegate = self
             audioPlayer?.play()
@@ -648,10 +967,8 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
 struct EditScreenView: View {
     let selectedButton: String
     let inputText: String
-    let onBackTapped: () -> Void
-    
-    @StateObject private var audioManager = AudioManager()
-    @StateObject private var apiManager = VoiceAPIManager()
+    @ObservedObject var apiManager: VoiceAPIManager // Changed to ObservedObject and passed in
+    let onBackTapped: (RecordingData?) -> Void
     
     @State private var topic = ""
     @State private var value = ""
@@ -665,8 +982,6 @@ struct EditScreenView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var generatedAudioData: Data?
-    @State private var showDocumentPicker = false
-    @State private var selectedAudioFile: Data?
     
     var body: some View {
         NavigationView {
@@ -674,7 +989,7 @@ struct EditScreenView: View {
                 VStack(spacing: 20) {
                     // Navigation Header
                     HStack {
-                        Button(action: onBackTapped) {
+                        Button(action: { onBackTapped(createGeneratedRecording()) }) {
                             HStack(spacing: 5) {
                                 Image(systemName: "chevron.left")
                                     .font(.system(size: 18, weight: .medium))
@@ -694,7 +1009,7 @@ struct EditScreenView: View {
                         Spacer()
                         
                         Button("Done") {
-                            onBackTapped()
+                            onBackTapped(createGeneratedRecording())
                         }
                         .font(.system(size: 17))
                         .foregroundColor(.blue)
@@ -702,14 +1017,16 @@ struct EditScreenView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                     
+                    // Connection status indicator
+                    connectionStatusView
+                    
                     headerView
                     infoView
-                    audioInputSection
                     textInputSection
                     advancedSettingsSection
-                    generateButton
+                    regenerateButton // Added for re-generation
                     
-                    if isLoading {
+                    if isLoading { // This is EditScreenView's own isLoading
                         loadingView
                     }
                     
@@ -720,6 +1037,26 @@ struct EditScreenView: View {
                 .padding()
             }
             .background(Color.black)
+            .onAppear {
+                self.topic = selectedButton // Initialize topic from passed prop
+                self.value = inputText    // Initialize value from passed prop
+            }
+            .task {
+                // Directly call apiManager's method and handle potential error
+                do {
+                    let isValid = try await apiManager.verifyAPIKey()
+                    if !isValid {
+                        // Consider how to display this error, perhaps using existing showErrorAlert
+                        // For now, just printing. If EditScreenView has its own error display, use that.
+                        print("EditScreenView: API Key is invalid or verification failed.")
+                        // You might want to set a local error state here if EditScreenView needs to react.
+                        // Example: showErrorAlert("API Key is invalid or verification failed.")
+                    }
+                } catch {
+                    print("EditScreenView: Could not verify API key: \\\\(error.localizedDescription)")
+                    // Example: showErrorAlert("Could not verify API key: \\\\(error.localizedDescription)")
+                }
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
         .alert("Error", isPresented: $showError) {
@@ -727,34 +1064,81 @@ struct EditScreenView: View {
         } message: {
             Text(errorMessage)
         }
-        .sheet(isPresented: $showDocumentPicker) {
-            DocumentPicker { data in
-                selectedAudioFile = data
-                audioManager.hasRecording = false // Clear recording when file is selected
-            }
-        }
-        .task {
-            await verifyAPI()
+    }
+    
+    // Create a RecordingData object from the generated audio
+    private func createGeneratedRecording() -> RecordingData? {
+        guard let audioData = generatedAudioData else { return nil }
+        
+        return RecordingData(
+            title: "AI Generated: \\\\(topic) - \\\\(value)",
+            date: formattedDate(Date()), // Call local/passed formattedDate
+            duration: estimateDuration(from: audioData), // Call local/passed estimateDuration
+            audioData: audioData
+        )
+    }
+    
+    // Added helper function
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+    
+    // Helper function to estimate duration
+    private func estimateDuration(from audioData: Data) -> String {
+        do {
+            let player = try AVAudioPlayer(data: audioData)
+            let seconds = Int(player.duration)
+            return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+        } catch {
+            // Similar logic as in ContentView's estimateDuration
+            let bytesPerSecondEstimate = 32000 // For 16-bit mono audio at 16kHz
+            let estimatedSeconds = audioData.count / bytesPerSecondEstimate
+            return "\(estimatedSeconds / 60):\(String(format: "%02d", estimatedSeconds % 60))"
         }
     }
     
     // MARK: - View Components
+    private var connectionStatusView: some View {
+        HStack {
+            if apiManager.connectionStatus == .connected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Text("Connected to backend server")
+                    .foregroundColor(.green)
+            } else if apiManager.connectionStatus == .failed {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+                Text("Failed to connect to backend server")
+                    .foregroundColor(.red)
+            } else {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Checking connection...")
+                    .foregroundColor(.gray)
+            }
+        }
+        .font(.caption)
+        .padding(.vertical, 5)
+    }
+    
     private var headerView: some View {
         VStack {
-            Text("🎤 AI Voice Cloning")
+            Text("🎤 AI Voice Generation")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-                .foregroundColor(.primary)
+                .foregroundColor(.white) // Ensure white text for dark background
         }
     }
     
-    private var infoView: some View {
+    private var infoView: some View { // Updated info text
         VStack(alignment: .leading, spacing: 8) {
-            Text("Cómo funciona:")
+            Text("Adjust Settings & Re-generate:")
                 .font(.headline)
                 .foregroundColor(.blue)
             
-            Text("Graba tu voz por al menos 30 segundos (idealmente 2 minutos) o sube un archivo MP3, luego escribe el tema y valor para generar el texto que quieres que diga con tu voz clonada.")
+            Text("The initial audio was generated automatically. Use the settings below to fine-tune parameters like voice similarity and stability. Tap 'Re-generate Audio' to apply changes.")
                 .font(.body)
                 .foregroundColor(.secondary)
         }
@@ -763,118 +1147,13 @@ struct EditScreenView: View {
         .cornerRadius(10)
     }
     
-    private var audioInputSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Entrena tu voz:")
-                .font(.headline)
-            
-            // Recording controls
-            HStack(spacing: 15) {
-                Button(action: {
-                    if audioManager.isRecording {
-                        audioManager.stopRecording()
-                    } else {
-                        Task {
-                            do {
-                                try await audioManager.startRecording()
-                            } catch {
-                                showErrorAlert(error.localizedDescription)
-                            }
-                        }
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: audioManager.isRecording ? "stop.circle.fill" : "mic.circle.fill")
-                        Text(audioManager.isRecording ? "Parar" : "Grabar Voz")
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(audioManager.isRecording ? Color.red : Color.blue)
-                    .cornerRadius(8)
-                }
-                
-                if audioManager.isRecording {
-                    Text(formatTime(audioManager.recordingTime))
-                        .font(.monospaced(.body)())
-                        .fontWeight(.bold)
-                        .foregroundColor(audioManager.recordingTime >= 120 ? .green : 
-                                       audioManager.recordingTime >= 30 ? .orange : .red)
-                    
-                    if audioManager.recordingTime >= 120 {
-                        Text("✅")
-                    }
-                }
-            }
-            
-            // Recording preview
-            if audioManager.hasRecording {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Tu grabación:")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    HStack {
-                        Button(action: {
-                            if audioManager.isPlaying {
-                                audioManager.stopPlayback()
-                            } else {
-                                do {
-                                    try audioManager.playRecording()
-                                } catch {
-                                    showErrorAlert(error.localizedDescription)
-                                }
-                            }
-                        }) {
-                            Image(systemName: audioManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.title2)
-                        }
-                        
-                        Text("Reproducir grabación")
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                    }
-                }
-                .padding()
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            // File picker option
-            Text("- O -")
-                .frame(maxWidth: .infinity, alignment: .center)
-                .foregroundColor(.secondary)
-            
-            VStack(spacing: 10) {
-                Button("📁 Seleccionar archivo de audio") {
-                    showDocumentPicker = true
-                }
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.blue)
-                .cornerRadius(8)
-                
-                if selectedAudioFile != nil {
-                    Text("✅ Archivo seleccionado")
-                        .foregroundColor(.green)
-                        .font(.caption)
-                }
-            }
-        }
-        .padding()
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(10)
-    }
-    
     private var textInputSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Tema para el pensamiento:")
+                Text("Topic for thought:")
                     .font(.headline)
                 
-                TextField("Ej: miedos personales, películas, general", text: $topic)
+                TextField("E.g., personal fears, movies, general", text: $topic)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .onChange(of: topic) { _ in
                         generateThoughtIfReady()
@@ -882,10 +1161,10 @@ struct EditScreenView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Valor específico del tema:")
+                Text("Specific value for topic:")
                     .font(.headline)
                 
-                TextField("Ej: arañas, Star Wars, el clima de hoy", text: $value)
+                TextField("E.g., spiders, Star Wars, today's weather", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .onChange(of: value) { _ in
                         generateThoughtIfReady()
@@ -893,7 +1172,7 @@ struct EditScreenView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Texto que quieres que diga la IA (generado):")
+                Text("Text for AI to say (generated):")
                     .font(.headline)
                 
                 TextEditor(text: $generatedText)
@@ -908,7 +1187,7 @@ struct EditScreenView: View {
     
     private var advancedSettingsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Ajustes avanzados para mejorar resultados:")
+            Text("Advanced settings to improve results:")
                 .font(.headline)
                 .foregroundColor(.blue)
             
@@ -916,7 +1195,7 @@ struct EditScreenView: View {
                 // Similarity slider
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
-                        Text("Similitud de voz:")
+                        Text("Voice similarity:")
                         Spacer()
                         Text(String(format: "%.2f", similarityBoost))
                             .fontWeight(.bold)
@@ -929,7 +1208,7 @@ struct EditScreenView: View {
                 // Stability slider
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
-                        Text("Estabilidad:")
+                        Text("Stability:")
                         Spacer()
                         Text(String(format: "%.2f", stability))
                             .fontWeight(.bold)
@@ -939,7 +1218,7 @@ struct EditScreenView: View {
                         .tint(.blue)
                 }
                 
-                Text("👍 Aumenta la similitud para un sonido más parecido a tu voz. Aumenta la estabilidad para un habla más consistente.")
+                Text("👍 Increase similarity for a sound more like your voice. Increase stability for more consistent speech.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
@@ -947,13 +1226,13 @@ struct EditScreenView: View {
                 
                 // Background sound settings
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle("Añadir sonido de fondo (fan.mp3)", isOn: $addBackground)
+                    Toggle("Add background sound (fan.mp3)", isOn: $addBackground)
                         .fontWeight(.medium)
                     
                     if addBackground {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text("Volumen del fondo:")
+                                Text("Background volume:")
                                 Spacer()
                                 Text(String(format: "%.2f", backgroundVolume))
                                     .fontWeight(.bold)
@@ -963,7 +1242,7 @@ struct EditScreenView: View {
                                 .tint(.blue)
                         }
                         
-                        Text("🔊 Ajusta el volumen del sonido de fondo. 0 = muy bajo, 1 = volumen normal.")
+                        Text("🔊 Adjust background sound volume. 0 = very low, 1 = normal volume.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -975,17 +1254,20 @@ struct EditScreenView: View {
         .cornerRadius(10)
     }
     
-    private var generateButton: some View {
-        Button("🚀 Generar Audio con IA") {
-            generateAudio()
+    private var regenerateButton: some View {
+        Button("🔄 Re-generate Audio with New Settings") {
+            // Use the current topic and value from EditScreenView's state,
+            // which were initialized from selectedButton and inputText.
+            // If you make topic/value editable in EditScreenView, this will use the edited values.
+            generateAudio() // This is EditScreenView's method for re-generation
         }
         .foregroundColor(.white)
         .font(.headline)
         .padding()
         .frame(maxWidth: .infinity)
-        .background(canGenerate ? Color.blue : Color.gray)
+        .background(apiManager.connectionStatus == .connected && !isLoading ? Color.orange : Color.gray)
         .cornerRadius(10)
-        .disabled(!canGenerate || isLoading)
+        .disabled(apiManager.connectionStatus != .connected || isLoading)
     }
     
     private var loadingView: some View {
@@ -993,7 +1275,7 @@ struct EditScreenView: View {
             ProgressView()
                 .scaleEffect(1.5)
             
-            Text("Entrenando la IA con tu voz y generando el audio...")
+            Text("Training AI with your voice and generating audio...")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
@@ -1002,19 +1284,19 @@ struct EditScreenView: View {
     
     private func resultView(audioData: Data) -> some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("✅ Audio generado exitosamente!")
+            Text("✅ Audio generated successfully!")
                 .font(.headline)
                 .foregroundColor(.green)
             
-            Text("Tu audio ha sido generado con la voz clonada:")
+            Text("Your audio has been generated with the cloned voice:")
                 .foregroundColor(.secondary)
             
             AudioPlayerView(audioData: audioData)
             
-            ShareLink(item: audioData, preview: SharePreview("Audio clonado", image: Image(systemName: "waveform"))) {
+            ShareLink(item: audioData, preview: SharePreview("Cloned audio", image: Image(systemName: "waveform"))) {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Compartir Audio")
+                    Text("Share Audio")
                 }
                 .foregroundColor(.white)
                 .padding()
@@ -1029,13 +1311,7 @@ struct EditScreenView: View {
     }
     
     // MARK: - Computed Properties
-    private var canGenerate: Bool {
-        // Para la integración con el backend de Python, solo necesitamos el tema y el valor
-        // El texto generado se obtendrá automáticamente
-        !topic.isEmpty && 
-        !value.isEmpty && 
-        !generatedText.isEmpty
-    }
+    // Removed: private var canGenerate: Bool { ... }
     
     // MARK: - Helper Methods
     private func formatTime(_ time: TimeInterval) -> String {
@@ -1049,77 +1325,54 @@ struct EditScreenView: View {
         showError = true
     }
     
-    private func generateThoughtIfReady() {
+    private func generateThoughtIfReady() { 
+        // This function might still be useful if textInputSection's topic/value become editable
+        // and you want to update generatedText reactively.
+        // For now, the main generation path doesn't rely on EditScreenView's generatedText for the first pass.
+        // If re-generating, generateAudio() will call apiManager.generateThought internally.
         guard !topic.isEmpty && !value.isEmpty else {
             generatedText = ""
             return
         }
         
-        Task {
-            do {
-                let thought = try await apiManager.generateThought(topic: topic, value: value)
-                await MainActor.run {
-                    generatedText = thought
-                    print("Successfully generated thought: \(thought)")
-                }
-            } catch {
-                await MainActor.run {
-                    showErrorAlert("Error al generar el pensamiento: \(error.localizedDescription)")
-                    print("Error generating thought: \(error)")
-                }
-            }
-        }
+        // Set isLoading for thought generation if it's a separate step here
+        // Task { ... apiManager.generateThought ... update generatedText ... }
     }
     
-    private func generateAudio() {
-        guard canGenerate else { return }
-        
-        // Ensure we have the required parameters to generate audio
-        guard !topic.isEmpty, !value.isEmpty, !generatedText.isEmpty else {
-            showErrorAlert("Por favor, asegúrese de que el tema y el valor están definidos")
+    private func generateAudio() { // This is EditScreenView's method for re-generation
+        // guard canGenerate else { return } // canGenerate might need adjustment or removal
+                                        // if generatedText isn't a hard requirement before re-generating.
+                                        // The backend's /generate-audio now takes topic and value, and generates thought.
+
+        guard !topic.isEmpty, !value.isEmpty else {
+            showErrorAlert("Topic and Value must be provided for re-generation.")
             return
         }
         
-        isLoading = true
-        print("Generando audio con topic: \(topic), value: \(value)")
+        isLoading = true // Use EditScreenView's isLoading
+        print("EditScreenView: Re-generating audio with topic: \\(topic), value: \\(value)")
         
         Task {
             do {
-                // Use the Python backend to generate audio from topic and value
                 let result = try await apiManager.generateAudioWithClonedVoice(
-                    topic: topic,
-                    value: value,
+                    topic: self.topic, // Use local state topic
+                    value: self.value, // Use local state value
                     stability: stability,
                     similarityBoost: similarityBoost
                 )
                 
                 await MainActor.run {
-                    generatedAudioData = result
+                    generatedAudioData = result // Update EditScreenView's audio data
                     isLoading = false
-                    print("Successfully received audio data: \(result.count) bytes")
-                    
-                    // Opcionalmente podemos reproducir el audio automáticamente aquí
+                    print("EditScreenView: Successfully re-generated audio data: \\(result.count) bytes")
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    showErrorAlert("Error al generar audio: \(error.localizedDescription)")
-                    print("Error generating audio: \(error)")
+                    showErrorAlert("Error re-generating audio: \\(error.localizedDescription)")
+                    print("EditScreenView: Error re-generating audio: \\(error)")
                 }
             }
-        }
-    }
-    
-    private func verifyAPI() async {
-        do {
-            let isValid = try await apiManager.verifyAPIKey()
-            if !isValid {
-                await MainActor.run {
-                    showErrorAlert("❌ API Key inválida. Por favor verifica tu configuración del servidor.")
-                }
-            }
-        } catch {
-            print("Could not verify API key: \(error)")
         }
     }
 }
@@ -1155,7 +1408,7 @@ struct AudioPlayerView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     } else {
-                        Text("Audio generado")
+                        Text("Generated audio")
                             .font(.subheadline)
                     }
                 }
@@ -1187,6 +1440,11 @@ struct AudioPlayerView: View {
             player.pause()
             stopTimer()
         } else {
+            do {
+                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+            } catch {
+                print("AudioPlayerView: Failed to override output port to speaker: \\(error.localizedDescription)")
+            }
             player.play()
             startTimer()
         }
@@ -1217,43 +1475,7 @@ struct AudioPlayerView: View {
     }
 }
 
-// MARK: - Document Picker
-struct DocumentPicker: UIViewControllerRepresentable {
-    let onDocumentPicked: (Data) -> Void
-    
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.audio])
-        picker.delegate = context.coordinator
-        picker.allowsMultipleSelection = false
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onDocumentPicked: onDocumentPicked)
-    }
-    
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onDocumentPicked: (Data) -> Void
-        
-        init(onDocumentPicked: @escaping (Data) -> Void) {
-            self.onDocumentPicked = onDocumentPicked
-        }
-        
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            
-            do {
-                let data = try Data(contentsOf: url)
-                onDocumentPicked(data)
-            } catch {
-                print("Error reading file: \(error)")
-            }
-        }
-    }
-}
-
+// MARK: - Peek Visualization View
 struct PeekVisualizationView: View {
     let selectedButton: String
     let inputText: String
@@ -1303,12 +1525,6 @@ struct PeekVisualizationView: View {
             .padding(.horizontal, 40)
         }
     }
-}
-
-struct RecordingData {
-    let title: String
-    let date: String
-    let duration: String
 }
 
 struct RecordingRow: View {

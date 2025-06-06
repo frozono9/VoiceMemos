@@ -10,9 +10,22 @@
 		DD2F56502DF203FD006AD068 /* Voice Memos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Voice Memos.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Voice Memos" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = DD2F564F2DF203FD006AD068 /* Voice Memos */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		DD2F56522DF203FD006AD068 /* Voice Memos */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Voice Memos" target */,
+			);
 			path = "Voice Memos";
 			sourceTree = "<group>";
 		};

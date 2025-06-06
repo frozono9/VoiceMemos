@@ -247,7 +247,7 @@ If topic is 'travel' and value is 'Paris':
 ✅ "As I woke up today, I had this odd thought that someone around me will mention travel plans to Paris."
 
 If topic is 'fears' and value is 'spiders':
-✅ "For some reason, I couldn't shake the feeling this morning that someone I meet will be afraid of spiders."
+✅ "Okay, so… I just woke up, and I had this weird dream that I feel like I should record. In the dream, I met someone… and they told me they had this insane fear of spiders. Like, full-on panic. I know, it’s random… but it felt kinda specific, so… yeah."
 
 Your response must:
 - Be in English.
@@ -392,7 +392,7 @@ If topic is 'travel' and value is 'Paris':
 ✅ "As I woke up today, I had this odd thought that someone around me will mention travel plans to Paris."
 
 If topic is 'fears' and value is 'spiders':
-✅ "For some reason, I couldn't shake the feeling this morning that someone I meet will be afraid of spiders."
+✅ "Okay, so… I just woke up, and I had this weird dream that I feel like I should record. In the dream, I met someone… and they told me they had this insane fear of spiders. Like, full-on panic. I know, it’s random… but it felt kinda specific, so… yeah."
 
 Your response must:
 - Be in English.
