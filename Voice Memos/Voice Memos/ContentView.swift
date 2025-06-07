@@ -6,7 +6,7 @@ import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGen
 struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
-    @State private var currentScreen: AppScreen = .buttonSelection
+    @State private var currentScreen: AppScreen = .home // Ensure initial screen is .home
     @State private var generatedRecording: RecordingData? = nil
     @StateObject private var apiManager = VoiceAPIManager() // Added
     @State private var generationError: String? = nil // Added for error display
@@ -16,6 +16,8 @@ struct ContentView: View {
         case textInput
         case voiceMemos
         case editScreen
+        case home // Added home screen case
+        case tutorial // Added tutorial screen case
     }
     
     var body: some View {
@@ -36,21 +38,47 @@ struct ContentView: View {
                     inputText: inputText,
                     generatedRecording: generatedRecording,
                     onEditTapped: {
-                        currentScreen = .editScreen
+                        // currentScreen = .editScreen // OLD
+                        currentScreen = .home       // NEW: Navigate to Home
                     }
                 )
             case .editScreen:
                 EditScreenView(
-                    selectedButton: selectedButton,
-                    inputText: inputText,
-                    apiManager: apiManager, // Pass apiManager
-                    onBackTapped: { newRecording in
-                        if let newRecording = newRecording {
-                            generatedRecording = newRecording
-                        }
-                        currentScreen = .voiceMemos
+                    apiManager: apiManager,
+                    onBackTapped: { // MODIFIED: No longer receives RecordingData
+                        // OLD:
+                        // if let newRecordingFromEditScreen = newRecordingFromEditScreen {
+                        //     // Log that audio was generated but is not directly used in the main flow from here
+                        //     print("ContentView: EditScreenView returned with new recording: \\(newRecordingFromEditScreen.title), duration: \\(newRecordingFromEditScreen.duration). This is not used when returning to Home from Settings.")
+                        // }
+                        currentScreen = .home // New: Always return to home
                     }
                 )
+            case .home: // Handle home screen
+                NavigationView { // Added NavigationView
+                    HomeScreenView(
+                        onPerformTapped: {
+                            // Reset flow-specific states for a fresh "Perform" flow
+                            self.selectedButton = ""
+                            self.inputText = ""
+                            self.generatedRecording = nil 
+                            currentScreen = .buttonSelection
+                        },
+                        onSettingsTapped: {
+                            currentScreen = .editScreen
+                        },
+                        onTutorialTapped: {
+                            currentScreen = .tutorial
+                        }
+                    )
+                    .navigationTitle("Voice Memos AI") // Added title
+                }
+            case .tutorial: // Handle tutorial screen
+                NavigationView { // Added NavigationView
+                    TutorialView {
+                        currentScreen = .home // Action to go back to home screen
+                    }
+                }
             }
 
             if let error = generationError { // Global error display
@@ -182,6 +210,124 @@ struct ContentView: View {
                         duration: "Error"
                     )
                     self.generatedRecording = errorRecording
+                }
+            }
+        }
+    }
+}
+
+struct HomeScreenView: View {
+    let onPerformTapped: () -> Void
+    let onSettingsTapped: () -> Void
+    let onTutorialTapped: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea() // Dark background consistent with other views
+
+            VStack(spacing: 25) { // Adjusted spacing
+                Spacer()
+
+                Button(action: onPerformTapped) {
+                    HStack(spacing: 10) { // Added spacing for icon and text
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.title2) // Match text font size or slightly larger
+                        Text("Perform")
+                            .fontWeight(.medium)
+                    }
+                    .font(.title2)
+                    .padding()
+                    .frame(maxWidth: 280, minHeight: 60) // Adjusted size
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(12) // Slightly more rounded
+                }
+
+                Button(action: onSettingsTapped) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "gearshape.fill") // Changed icon to filled
+                            .font(.title2)
+                        Text("Settings")
+                            .fontWeight(.medium)
+                    }
+                    .font(.title2)
+                    .padding()
+                    .frame(maxWidth: 280, minHeight: 60)
+                    .background(Color.secondary) // Changed to a more standard settings color
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+
+                Button(action: onTutorialTapped) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "book.fill") // Changed icon to filled
+                            .font(.title2)
+                        Text("Tutorial")
+                            .fontWeight(.medium)
+                    }
+                    .font(.title2)
+                    .padding()
+                    .frame(maxWidth: 280, minHeight: 60)
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                
+                Spacer()
+                Spacer() // More space at the bottom
+            }
+        }
+        // .navigationTitle("Voice Memos AI") // This is set on the NavigationView in ContentView
+    }
+}
+
+struct TutorialView: View {
+    let onBackTapped: () -> Void // Action to go back
+
+    var body: some View {
+        ScrollView { // Added ScrollView for potentially longer content
+            VStack(alignment: .leading, spacing: 15) { // Adjusted spacing
+                
+                Text("Welcome to Voice Memos AI!")
+                    .font(.title) // Larger title
+                    .fontWeight(.bold)
+                    .padding(.bottom, 10)
+
+                Text("Follow these steps to create your AI voice memo:")
+                    .font(.headline)
+                    .padding(.bottom, 5)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Tap 'Perform' on the Home screen.", systemImage: "1.circle")
+                    Label("Select a topic category (e.g., 'Cards', 'Movies') or choose 'Custom'.", systemImage: "2.circle")
+                    Label("Enter specific text related to your chosen topic.", systemImage: "3.circle")
+                    Label("The app will then generate a short voice memo.", systemImage: "4.circle")
+                    Label("Find your new memo at the top of the 'All Recordings' list.", systemImage: "5.circle")
+                    Label("Tap on any memo to reveal playback controls.", systemImage: "6.circle")
+                }
+                .font(.body)
+                
+                Spacer(minLength: 20) // Add some space before the next section
+
+                Text("Additional Info:")
+                    .font(.headline)
+                    .padding(.bottom, 5)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("The 'Settings' screen (accessed from Home) shows advanced options. Currently, the AI voice is fixed.", systemImage: "gearshape.fill")
+                    Label("Generated audio is dated as 'yesterday' for this version.", systemImage: "calendar.badge.clock")
+                }
+                .font(.body)
+
+            }
+            .padding()
+        }
+        .navigationTitle("How to Use") // Set title here
+        .navigationBarTitleDisplayMode(.inline) // Prefer inline for sub-screens
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) { // Changed to .navigationBarTrailing for "Done"
+                Button("Done") {
+                    onBackTapped()
                 }
             }
         }
@@ -618,6 +764,13 @@ class VoiceAPIManager: ObservableObject {
     @Published var generatedAudioURL: URL? = nil
     @Published var connectionStatus: ConnectionStatus = .unknown // Added this line
 
+    // Added settings properties
+    @Published var stability: Double = 0.7
+    @Published var similarityBoost: Double = 0.85
+    @Published var addBackground: Bool = true
+    @Published var backgroundVolume: Double = 0.5
+
+
     private var baseURL = "http://192.168.1.51:5002" // Changed to Mac's IP
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
     private let apiKey = "test_api_key" // Replace with your actual API key if needed
@@ -751,19 +904,32 @@ class VoiceAPIManager: ObservableObject {
         }
     }
     
-    func generateAudioWithClonedVoice(topic: String, value: String, stability: Double = 0.7, similarityBoost: Double = 0.85, addBackground: Bool = true, backgroundVolume: Double = 0.5) async throws -> Data { // Changed addBackground default to true
+    // Modified to use stored settings, removed default parameters for them
+    func generateAudioWithClonedVoice(topic: String, value: String) async throws -> Data {
         // Try primary URL first
         do {
-            return try await generateAudioWithURL(baseURL, topic: topic, value: value, stability: stability, similarityBoost: similarityBoost, addBackground: addBackground, backgroundVolume: backgroundVolume)
+            return try await generateAudioWithURL(baseURL,
+                                                topic: topic,
+                                                value: value,
+                                                stability: self.stability, // Use stored value
+                                                similarityBoost: self.similarityBoost, // Use stored value
+                                                addBackground: self.addBackground, // Use stored value
+                                                backgroundVolume: self.backgroundVolume) // Use stored value
         } catch {
-            print("Primary URL failed for audio generation: \(error.localizedDescription)")
+            print("Primary URL failed for audio generation: \\(error.localizedDescription)")
             
             // Try fallbacks
             for fallbackURL in fallbackURLs {
                 do {
-                    return try await generateAudioWithURL(fallbackURL, topic: topic, value: value, stability: stability, similarityBoost: similarityBoost, addBackground: addBackground, backgroundVolume: backgroundVolume)
+                    return try await generateAudioWithURL(fallbackURL,
+                                                        topic: topic,
+                                                        value: value,
+                                                        stability: self.stability,
+                                                        similarityBoost: self.similarityBoost,
+                                                        addBackground: self.addBackground,
+                                                        backgroundVolume: self.backgroundVolume)
                 } catch {
-                    print("Fallback URL \(fallbackURL) failed for audio generation: \(error.localizedDescription)")
+                    print("Fallback URL \\(fallbackURL) failed for audio generation: \\(error.localizedDescription)")
                 }
             }
             // If all URLs fail, throw the error
@@ -997,34 +1163,13 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
 
 // MARK: - Edit Screen View
 struct EditScreenView: View {
-    let selectedButton: String
-    let inputText: String
-    @ObservedObject var apiManager: VoiceAPIManager // Changed to ObservedObject and passed in
-    let onBackTapped: (RecordingData?) -> Void
+    // Removed selectedButton and inputText
+    @ObservedObject var apiManager: VoiceAPIManager
+    let onBackTapped: () -> Void // MODIFIED: No longer takes RecordingData?
     
-    // Define AutoGenerationState enum
-    enum AutoGenerationState {
-        case idle
-        case generatingThought
-        case generatingAudio // Added if needed for more granular control, or simplify if not
-    }
-    
-    @State private var topic = ""
-    @State private var value = ""
-    @State private var generatedText = ""
-    @State private var stability: Double = 0.7
-    @State private var similarityBoost: Double = 0.85
-    @State private var addBackground = true // Defaulted to true
-    @State private var backgroundVolume: Double = 0.2
-    
-    @State private var isLoading = false
-    @State private var lastGenerationTask: Task<Void, Never>? = nil
-    @State private var showError = false
-    @State private var errorMessage = ""
-    @State private var generatedAudioData: Data?
-    @State private var showDocumentPicker = false
-    @State private var selectedAudioFile: Data?
-    @State private var autoGenerationState: AutoGenerationState = .idle // Added state variable
+    // Removed @State variables related to text input, generation, loading, and results
+    @State private var showError = false // KEEP for API verification
+    @State private var errorMessage = "" // KEEP for API verification
     
     var body: some View {
         NavigationView {
@@ -1032,7 +1177,7 @@ struct EditScreenView: View {
                 VStack(spacing: 20) {
                     // Navigation Header
                     HStack {
-                        Button(action: { onBackTapped(createGeneratedRecording()) }) {
+                        Button(action: { onBackTapped() }) { // MODIFIED: Call onBackTapped without params
                             HStack(spacing: 5) {
                                 Image(systemName: "chevron.left")
                                     .font(.system(size: 18, weight: .medium))
@@ -1045,14 +1190,14 @@ struct EditScreenView: View {
                         
                         Spacer()
                         
-                        Text("AI Voice Cloning")
+                        Text("Settings") // MODIFIED: Title changed
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.white)
                         
                         Spacer()
                         
                         Button("Done") {
-                            onBackTapped(createGeneratedRecording())
+                            onBackTapped() // MODIFIED: Call onBackTapped without params
                         }
                         .font(.system(size: 17))
                         .foregroundColor(.blue)
@@ -1060,32 +1205,18 @@ struct EditScreenView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                     
-                    // Connection status indicator
-                    connectionStatusView
+                    connectionStatusView // KEEP
                     
-                    headerView
-                    infoView
-                    textInputSection
-                    advancedSettingsSection
-                    generateButton // Replaced regenerateButton with generateButton
+                    // headerView, infoView, textInputSection, generateButton, loadingView, resultView REMOVED
                     
-                    if isLoading { // This is EditScreenView\'s own isLoading
-                        loadingView
-                    }
-                    
-                    if let audioData = generatedAudioData {
-                        resultView(audioData: audioData)
-                    }
+                    advancedSettingsSection // KEEP (will bind to apiManager)
                 }
                 .padding()
             }
             .background(Color.black)
-            .onAppear {
-                self.topic = selectedButton // Initialize topic from passed prop
-                self.value = inputText    // Initialize value from passed prop
-            }
-            .task { // Modified .task block
-                await performAPIVerification() // Call the new helper
+            // .onAppear block REMOVED
+            .task {
+                await performAPIVerification()
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -1096,38 +1227,7 @@ struct EditScreenView: View {
         }
     }
     
-    // Create a RecordingData object from the generated audio
-    private func createGeneratedRecording() -> RecordingData? {
-        guard let audioData = generatedAudioData else { return nil }
-        
-        return RecordingData(
-            title: "AI Generated: \\\\(topic) - \\\\(value)",
-            date: formattedDate(Date()), // Call local/passed formattedDate
-            duration: estimateDuration(from: audioData), // Call local/passed estimateDuration
-            audioData: audioData
-        )
-    }
-    
-    // Added helper function
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
-    }
-    
-    // Helper function to estimate duration
-    private func estimateDuration(from audioData: Data) -> String {
-        do {
-            let player = try AVAudioPlayer(data: audioData)
-            let seconds = Int(player.duration)
-            return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
-        } catch {
-            // Similar logic as in ContentView's estimateDuration
-            let bytesPerSecondEstimate = 32000 // For 16-bit mono audio at 16kHz
-            let estimatedSeconds = audioData.count / bytesPerSecondEstimate
-            return "\(estimatedSeconds / 60):\(String(format: "%02d", estimatedSeconds % 60))"
-        }
-    }
+    // createGeneratedRecording(), formattedDate(), estimateDuration() REMOVED
     
     // MARK: - View Components
     private var connectionStatusView: some View {
@@ -1153,86 +1253,9 @@ struct EditScreenView: View {
         .padding(.vertical, 5)
     }
     
-    private var headerView: some View {
-        VStack {
-            Text("🎤 AI Voice Generation")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .foregroundColor(.white) // Ensure white text for dark background
-        }
-    }
-    
-    private var infoView: some View { // Updated info text
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Adjust Settings & Re-generate:")
-                .font(.headline)
-                .foregroundColor(.blue)
-            
-            Text("The initial audio was generated automatically. Use the settings below to fine-tune parameters like voice similarity and stability. Tap 'Re-generate Audio' to apply changes.")
-                .font(.body)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color.blue.opacity(0.1))
-        .cornerRadius(10)
-    }
-    
-    private var textInputSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Topic for thought:")
-                    .font(.headline)
-                
-                TextField("E.g., personal fears, movies, general", text: $topic)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .onChange(of: topic) { _ in
-                        generateThoughtIfReady()
-                    }
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Valor específico del tema:")
-                    .font(.headline)
-                
-                TextField("E.g., spiders, Star Wars, today's weather", text: $value)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .onChange(of: value) { _ in
-                        generateThoughtIfReady()
-                    }
-                    .overlay(
-                        autoGenerationState == .generatingThought || autoGenerationState == .generatingAudio ?
-                            HStack {
-                                Spacer()
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .padding(.trailing, 8)
-                            } : nil
-                    )
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Texto que quieres que diga la IA (generado):")
-                    .font(.headline)
-                
-                TextEditor(text: $generatedText)
-                    .frame(minHeight: 100)
-                    .padding(8)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(8)
-                    .disabled(true)
-                    .overlay(
-                        ZStack {
-                            // Mostrar un mensaje si no hay texto generado
-                            if generatedText.isEmpty && (topic.isEmpty || value.isEmpty) {
-                                Text("Completa el tema y valor para generar texto")
-                                    .foregroundColor(.secondary)
-                                    .padding()
-                            }
-                        }
-                    )
-            }
-        }
-    }
+    // headerView REMOVED
+    // infoView REMOVED
+    // textInputSection REMOVED
     
     private var advancedSettingsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -1241,29 +1264,27 @@ struct EditScreenView: View {
                 .foregroundColor(.blue)
             
             VStack(spacing: 15) {
-                // Similarity slider
+                // Similarity slider - BIND TO apiManager
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text("Voice similarity:")
                         Spacer()
-                        Text(String(format: "%.2f", similarityBoost))
+                        Text(String(format: "%.2f", apiManager.similarityBoost)) // Use apiManager
                             .fontWeight(.bold)
                     }
-                    
-                    Slider(value: $similarityBoost, in: 0.5...1.0, step: 0.05)
+                    Slider(value: $apiManager.similarityBoost, in: 0.5...1.0, step: 0.05) // Use apiManager
                         .tint(.blue)
                 }
                 
-                // Stability slider
+                // Stability slider - BIND TO apiManager
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text("Stability:")
                         Spacer()
-                        Text(String(format: "%.2f", stability))
+                        Text(String(format: "%.2f", apiManager.stability)) // Use apiManager
                             .fontWeight(.bold)
                     }
-                    
-                    Slider(value: $stability, in: 0.3...1.0, step: 0.05)
+                    Slider(value: $apiManager.stability, in: 0.3...1.0, step: 0.05) // Use apiManager
                         .tint(.blue)
                 }
                 
@@ -1273,21 +1294,20 @@ struct EditScreenView: View {
                 
                 Divider()
                 
-                // Background sound settings
+                // Background sound settings - BIND TO apiManager
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle("Add background sound (fan.mp3)", isOn: $addBackground)
+                    Toggle("Add background sound (fan.mp3)", isOn: $apiManager.addBackground) // Use apiManager
                         .fontWeight(.medium)
                     
-                    if addBackground {
+                    if apiManager.addBackground { // Use apiManager
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Text("Background volume:")
                                 Spacer()
-                                Text(String(format: "%.2f", backgroundVolume))
+                                Text(String(format: "%.2f", apiManager.backgroundVolume)) // Use apiManager
                                     .fontWeight(.bold)
                             }
-                            
-                            Slider(value: $backgroundVolume, in: 0.0...1.0, step: 0.05)
+                            Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05) // Use apiManager
                                 .tint(.blue)
                         }
                         
@@ -1303,162 +1323,16 @@ struct EditScreenView: View {
         .cornerRadius(10)
     }
     
-    private var generateButton: some View {
-        Button("🚀 Generar Audio con IA") {
-            generateAudio()
-        }
-        .foregroundColor(.white)
-        .font(.headline)
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(canGenerate ? Color.blue : Color.gray)
-        .cornerRadius(10)
-        .disabled(!canGenerate || isLoading)
-    }
-    
-    private var loadingView: some View {
-        VStack(spacing: 15) {
-            ProgressView()
-                .scaleEffect(1.5)
-            
-            Text("Entrenando la IA con tu voz y generando el audio...")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                
-            Text("Esto puede tardar unos segundos")
-                .font(.caption)
-                .foregroundColor(.gray)
-        }
-        .padding()
-        .background(Color.black.opacity(0.7))
-        .cornerRadius(10)
-    }
-    
-    private func resultView(audioData: Data) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("✅ Audio generado exitosamente!")
-                .font(.headline)
-                .foregroundColor(.green)
-            
-            Text("Your audio has been generated with the cloned voice:")
-                .foregroundColor(.secondary)
-            
-            AudioPlayerView(audioData: audioData)
-            
-            ShareLink(item: audioData, preview: SharePreview("Audio clonado", image: Image(systemName: "waveform"))) {
-                HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Compartir Audio")
-                }
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.green)
-                .cornerRadius(8)
-            }
-        }
-        .padding()
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.green.opacity(0.3), lineWidth: 1)
-        )
-    }
-    
-    // MARK: - Computed Properties
-    // Restored canGenerate computed property
-    private var canGenerate: Bool {
-        !topic.isEmpty && !value.isEmpty && !generatedText.isEmpty && !isLoading
-    }
-    
-    // MARK: - Helper Methods
-    private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
+    // generateButton, loadingView, resultView REMOVED
+    // canGenerate, formatTime REMOVED
     
     private func showErrorAlert(_ message: String) {
         errorMessage = message
         showError = true
     }
     
-    private func generateThoughtIfReady() {
-        guard !topic.isEmpty && !value.isEmpty else {
-            generatedText = ""
-            autoGenerationState = .idle // Ensure this is set
-            return
-        }
-        
-        autoGenerationState = .generatingThought // Set state before task
-        Task {
-            do {
-                let thought = try await apiManager.generateThought(topic: topic, value: value)
-                await MainActor.run {
-                    generatedText = thought
-                    autoGenerationState = .idle // Reset state on success
-                    print("Successfully generated thought: \\(thought)")
-                }
-            } catch {
-                await MainActor.run {
-                    showErrorAlert("Error al generar el pensamiento: \\(error.localizedDescription)")
-                    autoGenerationState = .idle // Reset state on error
-                    print("Error generating thought: \\(error)")
-                }
-            }
-        }
-    }
+    // generateThoughtIfReady(), generateAudio() REMOVED
     
-    private func generateAudio() {
-        guard canGenerate else { return }
-        
-        // Ensure we have the required parameters to generate audio
-        guard !topic.isEmpty, !value.isEmpty, !generatedText.isEmpty else {
-            showErrorAlert("Por favor, asegúrese de que el tema y el valor están definidos")
-            return
-        }
-        
-        isLoading = true
-        print("Generando audio con topic: \\(topic), value: \\(value)")
-        
-        Task {
-            do {
-                let result = try await apiManager.generateAudioWithClonedVoice(
-                    topic: self.topic, // Use local state topic
-                    value: self.value, // Use local state value
-                    stability: stability,
-                    similarityBoost: similarityBoost,
-                    addBackground: self.addBackground, // Use state variable from EditScreenView
-                    backgroundVolume: self.backgroundVolume // Use state variable from EditScreenView
-                )
-                
-                await MainActor.run {
-                    generatedAudioData = result // Update EditScreenView's audio data
-                    isLoading = false
-                    
-                    // Haptic feedback for success
-                    let generator = UIImpactFeedbackGenerator(style: .heavy) // Changed to .heavy
-                    generator.impactOccurred()
-                    
-                    print("Successfully received audio data: \\(result.count) bytes")
-                    
-                    // Opcionalmente podemos reproducir el audio automáticamente aquí
-                }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    showErrorAlert("Error al generar audio: \\(error.localizedDescription)")
-                    print("Error generating audio: \\(error)")
-                    // Haptic feedback for error (optional, using a different style)
-                    // let errorGenerator = UINotificationFeedbackGenerator()
-                    // errorGenerator.notificationOccurred(.error)
-                }
-            }
-        }
-    }
-    
-    // New private async function to handle API verification within .task
     private func performAPIVerification() async {
         do {
             let isValid = try await apiManager.verifyAPIKey()
@@ -1477,22 +1351,7 @@ struct EditScreenView: View {
         }
     }
     
-    // This function seems redundant now with performAPIVerification.
-    // Consider removing it if it's not called from anywhere else.
-    private func verifyAPI() async {
-        do {
-            let isValid = try await apiManager.verifyAPIKey()
-            if !isValid {
-                await MainActor.run {
-                    showErrorAlert("❌ API Key inválida. Por favor verifica tu configuración del servidor.")
-                }
-            }
-        } catch { // Added missing catch block
-             await MainActor.run {
-                showErrorAlert("Error during API verification: \\(error.localizedDescription)")
-            }
-        }
-    }
+    // verifyAPI() REMOVED
 }
 
 // MARK: - Audio Player View
