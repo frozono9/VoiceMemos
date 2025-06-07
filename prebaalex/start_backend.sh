@@ -13,17 +13,19 @@ cd "$(dirname "$0")"
 if [ ! -d "venv" ]; then
     echo "Setting up virtual environment..."
     python3 -m venv venv
+    # Ensure pip is installed in the new venv
+    venv/bin/python3 -m ensurepip --upgrade
 fi
 
 # Activate the virtual environment
 source venv/bin/activate
 
 # Upgrade pip and install dependencies
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+venv/bin/python3 -m pip install --upgrade pip
+venv/bin/python3 -m pip install -r requirements.txt
 
 # Check if pymongo is installed
-if ! python3 -c "import pymongo" &> /dev/null; then
+if ! venv/bin/python3 -c "import pymongo" &> /dev/null; then
     echo "Error: pymongo not found in the virtual environment." >&2
     echo "Please check that requirements.txt includes 'pymongo' and try again." >&2
     exit 1

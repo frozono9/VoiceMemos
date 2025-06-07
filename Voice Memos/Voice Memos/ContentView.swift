@@ -145,18 +145,11 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            // Check if a token exists. If so, consider the user logged in.
-            // Otherwise, show the Create Account or Login screen.
-            // This logic might need refinement based on how you want to handle first launch vs. subsequent launches.
-            if authManager.authToken == nil {
-                // currentScreen = .createAccount // Or .login if you prefer
-                // Let's check if we have a stored token first
-                authManager.loadTokenFromKeychain()
-                if authManager.authToken == nil {
-                     currentScreen = .createAccount // Default to create account if no token
-                } else {
-                    currentScreen = .home // Go home if token exists
-                }
+            // AuthManager's init() already loads the token from Keychain
+            if authManager.authToken != nil {
+                currentScreen = .home
+            } else {
+                currentScreen = .login // Show login if no token
             }
         }
     }
@@ -533,24 +526,24 @@ struct VoiceMemosView: View {
             RecordingData(title: "Strange Dream 02", date: "22 Feb 2024", duration: "0:30"),
             RecordingData(title: "Dream 09", date: "10 Feb 2024", duration: "0:27"),
             // Generate a static array of
-            RecordingData(title: "Strange Dream 03", date: "15 Jan 2024", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 07", date: "2 Jan 2024", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 06", date: "19 Dec 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 05", date: "7 Dec 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Strange Dream 04", date: "23 Nov 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 04", date: "10 Nov 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 03", date: "29 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Strange Dream 05", date: "14 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 02", date: "2 Oct 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Dream 01", date: "20 Sep 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "Strange Dream 06", date: "8 Sep 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-08-25", date: "25 Aug 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-08-13", date: "13 Aug 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-07-31", date: "31 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-07-17", date: "17 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-07-03", date: "3 Jul 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-06-18", date: "18 Jun 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))"),
-            RecordingData(title: "2023-06-05", date: "5 Jun 2023", duration: "\(Int.random(in: 0...0)):\(String(format: "%02d", Int.random(in: 5...35)))")
+            RecordingData(title: "Strange Dream 03", date: "15 Jan 2024", duration: "0:11"),
+            RecordingData(title: "Dream 07", date: "2 Jan 2024", duration: "0:04"),
+            RecordingData(title: "Dream 06", date: "19 Dec 2023", duration: "0:09"),
+            RecordingData(title: "Dream 05", date: "7 Dec 2023", duration: "0:22"),
+            RecordingData(title: "Strange Dream 04", date: "23 Nov 2023", duration: "0:21"),
+            RecordingData(title: "Dream 04", date: "10 Nov 2023", duration: "0:02"),
+            RecordingData(title: "Dream 03", date: "29 Oct 2023", duration: "0:31"),
+            RecordingData(title: "Strange Dream 05", date: "14 Oct 2023", duration: "0:09"),
+            RecordingData(title: "Dream 02", date: "2 Oct 2023", duration: "0:24"),
+            RecordingData(title: "Dream 01", date: "20 Sep 2023", duration: "0:44"),
+            RecordingData(title: "Strange Dream 06", date: "8 Sep 2023", duration: "1:31"),
+            RecordingData(title: "2023-08-25", date: "25 Aug 2023", duration: "2:22"),
+            RecordingData(title: "2023-08-13", date: "13 Aug 2023", duration: "0:57"),
+            RecordingData(title: "2023-07-31", date: "31 Jul 2023", duration: "0:11"),
+            RecordingData(title: "2023-07-17", date: "17 Jul 2023", duration: "0:26"),
+            RecordingData(title: "2023-07-03", date: "3 Jul 2023", duration: "0:24"),
+            RecordingData(title: "2023-06-18", date: "18 Jun 2023",duration: "0:12"),
+            RecordingData(title: "2023-06-05", date: "5 Jun 2023", duration: "0:15")
         ]
         
         // Insert the generated recording at the beginning if available
@@ -841,7 +834,7 @@ class VoiceAPIManager: ObservableObject {
     @Published var backgroundVolume: Double = 0.5
 
 
-    let baseURL = "http://127.0.0.1:5002" // Use localhost for backend
+    let baseURL = "http://192.168.1.68:5002" // MODIFIED: Use correct server IP
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
     private let apiKey = "test_api_key" // Replace with your actual API key if needed
     let authManager: AuthManager // Add AuthManager instance
@@ -2030,7 +2023,7 @@ class AuthManager: ObservableObject {
     @Published var showError: Bool = false // ADDED: For displaying errors in the UI
     @Published var errorMessage: String? = nil // ADDED: Stores the error message
 
-    private let baseURL = "http://127.0.0.1:5002" // Ensure this is your server's IP
+    private let baseURL = "http://192.168.1.68:5002" // MODIFIED: Use correct server IP
     // --- TEMPORARY DIAGNOSTIC for connection issues ---
     // private let baseURL = "http://127.0.0.1:5002" // Old localhost, incorrect for simulator/device
     // --- END TEMPORARY DIAGNOSTIC ---
@@ -2137,6 +2130,7 @@ class AuthManager: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+
             guard let httpResponse = response as? HTTPURLResponse else {
                 self.errorMessage = "Invalid response from server." // FIX: Use errorMessage
                 isLoading = false
@@ -2153,6 +2147,7 @@ class AuthManager: ObservableObject {
                     await MainActor.run {
                         self.authToken = tokenResponse.token
                         self.isAuthenticated = true
+                        self.saveTokenToKeychain(token: tokenResponse.token) // Save token persistently
                         self.errorMessage = nil // Clear error on success
                         self.showError = false
                     }
@@ -2183,7 +2178,9 @@ class AuthManager: ObservableObject {
     }
     
     func logout() {
-        self.authToken = nil // This will trigger deleteFromKeychain
+        self.authToken = nil
+        self.isAuthenticated = false
+        deleteTokenFromKeychain() // Remove persisted token
     }
 
     // MARK: - Keychain Management
@@ -2260,120 +2257,127 @@ struct VoiceCloneSheet: View {
     @State private var recordingURL: URL?
     @State private var isPlaying = false
     @State private var audioPlayer: AVAudioPlayer?
-    @State private var statusMessage: String? = nil
-    @State private var existingCloneId: String? = nil // Fetch current clone ID
+    @State private var statusMessage: String?
+    @State private var existingCloneId: String?
     @State private var isUploading = false
-    private let scriptText = """
-I don’t know why, but I woke up thinking someone today is going to mention the Queen of Hearts… like, out of nowhere.
 
-As I brushed my teeth, I had this odd hunch that the number 17 is going to pop up today—maybe on a sign or someone’s shirt.
-
-Okay, so… I just woke up, and I had this weird dream that I feel like I should record. In the dream, I met someone… and they told me they had this insane fear of spiders. Like, full-on panic. I know, it’s random… but it felt kinda specific, so… yeah.
-
-As I opened the window this morning, I had this strange feeling that someone will mention something that happened in 1998.
-
-I don’t know what it means, but I had this soft feeling that I’ll hear the name Isabella at least once today.
-
-I had this little spark of a thought while tying my shoes—someone I run into today is totally going to be a Leo.
-
-While making coffee, I had this odd moment where I just knew someone was going to bring up Inception at some point today.
-
-As weird as it sounds, I woke up with this clear thought: I’m definitely going to see a purple umbrella today.
-"""
     var body: some View {
-        VStack(spacing: 20) {
-            if let existing = existingCloneId {
-                Text("Existing voice clone ID: \(existing)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            }
-            ScrollView {
-                Text(scriptText)
-                    .padding()
-            }
-            .frame(maxHeight: 200) // Limit height to enable scrolling
-            Divider()
-            HStack {
-                Button(action: startRecording) {
-                    Text(isRecording ? "Recording..." : "Start Recording")
-                        .padding()
-                        .background(isRecording ? Color.red : Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                }
-                .disabled(isRecording)
-
-                Button(action: stopRecording) {
-                    Text("Stop")
-                        .padding()
-                        .background(Color.gray)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                }
-                .disabled(!isRecording)
-            }
-            if let url = recordingURL {
-                Button(action: {
-                    if isPlaying {
-                        audioPlayer?.stop()
-                        isPlaying = false
-                    } else {
-                        playRecording()
+        NavigationView {
+            VStack(spacing: 20) {
+                if let cloneId = existingCloneId {
+                    Text("Your voice clone ID:")
+                        .font(.headline)
+                    Text(cloneId)
+                        .font(.subheadline)
+                        .padding(.bottom)
+                    Button("Close") {
+                        presentationMode.wrappedValue.dismiss()
                     }
-                }) {
-                    Text(isPlaying ? "Stop Playback" : "Play Recording")
-                        .padding()
-                        .background(isPlaying ? Color.orange : Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                }
-            }
-            Button(action: generateClone) {
-                if isUploading {
-                    ProgressView()
-                } else {
-                    Text("Generate Voice Clone")
-                }
-            }
-            .disabled(recordingURL == nil || isUploading)
-
-            if let msg = statusMessage {
-                Text(msg)
                     .padding()
+                } else {
+                    Button(action: {
+                        isRecording ? stopRecording() : startRecording()
+                    }) {
+                        Text(isRecording ? "Stop Recording" : "Start Recording")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(isRecording ? Color.red : Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+
+                    if recordingURL != nil {
+                        Button(action: {
+                            if isPlaying {
+                                audioPlayer?.stop()
+                                isPlaying = false
+                            } else {
+                                playRecording()
+                            }
+                        }) {
+                            Text(isPlaying ? "Stop Playback" : "Play Recording")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.gray)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                    }
+
+                    Button(action: generateClone) {
+                        if isUploading {
+                            ProgressView()
+                        } else {
+                            Text("Generate Voice Clone")
+                        }
+                    }
+                    .disabled(recordingURL == nil || isUploading)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+
+                    if let msg = statusMessage {
+                        Text(msg)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                Spacer()
             }
-            Spacer()
-            Button("Done") {
+            .padding()
+            .navigationTitle("Voice Clone")
+            .navigationBarItems(trailing: Button("Close") {
                 presentationMode.wrappedValue.dismiss()
+            })
+            .onAppear {
+                Task { await fetchExistingClone() }
             }
-            .padding(.top)
-        }
-        .padding()
-        .onAppear(perform: configureSession)
-        .onAppear {
-            configureSession()
-            fetchExistingClone()
         }
     }
 
-    private func configureSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: .default)
-        try? session.setActive(true)
+    private func fetchExistingClone() async {
+        guard let token = apiManager.authManager.authToken,
+              let url = URL(string: "\(apiManager.baseURL)/me") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONDecoder().decode([String: String?].self, from: data),
+               let cloneId = json["voice_clone_id"] {
+                existingCloneId = cloneId
+            }
+        } catch {
+            statusMessage = "Failed to load existing clone"
+        }
     }
 
     private func startRecording() {
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("voice_clone.m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        audioRecorder = try? AVAudioRecorder(url: fileURL, settings: settings)
-        recordingURL = fileURL
-        audioRecorder?.record(forDuration: 60)
-        isRecording = true
+        let session = AVAudioSession.sharedInstance()
+        session.requestRecordPermission { granted in
+            guard granted else {
+                statusMessage = "Microphone permission denied"
+                return
+            }
+            do {
+                try session.setCategory(.playAndRecord, mode: .default)
+                try session.setActive(true)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("voiceclone.m4a")
+                let settings: [String: Any] = [
+                    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                    AVSampleRateKey: 44100,
+                    AVNumberOfChannelsKey: 1
+                ]
+                audioRecorder = try AVAudioRecorder(url: url, settings: settings)
+                audioRecorder?.record()
+                isRecording = true
+                recordingURL = url
+                statusMessage = nil
+            } catch {
+                statusMessage = "Recording failed: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func stopRecording() {
@@ -2383,68 +2387,50 @@ As weird as it sounds, I woke up with this clear thought: I’m definitely going
 
     private func playRecording() {
         guard let url = recordingURL else { return }
-        audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        audioPlayer?.delegate = AVDelegate(isPlaying: $isPlaying)
-        audioPlayer?.play()
-        isPlaying = true
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.play()
+            isPlaying = true
+        } catch {
+            statusMessage = "Playback failed"
+        }
     }
 
     private func generateClone() {
         guard let url = recordingURL,
-              let token = apiManager.authManager.authToken else {
-            statusMessage = "Not authenticated or no recording";
-            return
-        }
+              let token = apiManager.authManager.authToken else { return }
         isUploading = true
         statusMessage = nil
-        var request = URLRequest(url: URL(string: "\(apiManager.baseURL)/generate-voice-clone")!)
-        request.httpMethod = "POST"
-        let boundary = UUID().uuidString
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        var data = Data()
-        // Audio part
-        data.append("--\(boundary)\r\n".data(using: .utf8)!)
-        data.append("Content-Disposition: form-data; name=\"audio\"; filename=\"voice_clone.m4a\"\r\n".data(using: .utf8)!)
-        data.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
-        data.append(try! Data(contentsOf: url))
-        data.append("\r\n".data(using: .utf8)!)
-        data.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        Task {
+            do {
+                let endpoint = "\(apiManager.baseURL)/generate-voice-clone"
+                var request = URLRequest(url: URL(string: endpoint)!)
+                request.httpMethod = "POST"
+                let boundary = UUID().uuidString
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+                var body = Data()
+                // Append file field
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"voiceclone.m4a\"\r\n".data(using: .utf8)!)
+                body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+                body.append(try Data(contentsOf: url))
+                body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+                request.httpBody = body
 
-        URLSession.shared.uploadTask(with: request, from: data) { responseData, resp, error in
-            DispatchQueue.main.async {
-                isUploading = false
-                if let error = error {
-                    statusMessage = "Error: \(error.localizedDescription)"
-                    return
+                let (data, _) = try await URLSession.shared.data(for: request)
+                if let json = try? JSONDecoder().decode([String: String].self, from: data),
+                   let cloneId = json["voice_clone_id"] {
+                    existingCloneId = cloneId
+                    statusMessage = "Clone created!"
+                } else {
+                    statusMessage = "Unexpected response"
                 }
-                guard let httpResp = resp as? HTTPURLResponse,
-                      let d = responseData,
-                      httpResp.statusCode == 200,
-                      let json = try? JSONDecoder().decode([String: String].self, from: d),
-                      let voiceId = json["voice_clone_id"] else {
-                    statusMessage = "Failed to clone voice"
-                    return
-                }
-                statusMessage = "Voice clone id is \(voiceId)"
+            } catch {
+                statusMessage = "Upload failed: \(error.localizedDescription)"
             }
-        }.resume()
-    }
-
-    private func fetchExistingClone() {
-        guard let token = apiManager.authManager.authToken,
-              let url = URL(string: "\(apiManager.baseURL)/me") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data,
-                  let json = try? JSONDecoder().decode([String: String].self, from: data),
-                  let cloneId = json["voice_clone_id"] else { return }
-            DispatchQueue.main.async {
-                existingCloneId = cloneId
-            }
-        }.resume()
+            isUploading = false
+        }
     }
 }
 
