@@ -584,9 +584,20 @@ def verify_activation_code_endpoint():
 @app.route('/generate-voice-clone', methods=['POST'])
 @token_required
 def generate_voice_clone():
+    # Handle overwrite flag: bypass existing clone return and delete old clone if present
+    overwrite = request.values.get('overwrite', 'false').strip().lower() in ('true', '1')
     existing_id = g.current_user.get('voice_clone_id')
     if existing_id:
-        return jsonify({"voice_clone_id": existing_id}), 200
+        if not overwrite:
+            return jsonify({"voice_clone_id": existing_id}), 200
+        # Overwrite: delete old voice clone from ElevenLabs
+        delete_url = f"https://api.elevenlabs.io/v1/voices/{existing_id}"
+        try:
+            del_resp = requests.delete(delete_url, headers=headers)
+            del_resp.raise_for_status()
+            print(f"Deleted old voice clone {existing_id} for user {g.current_user.get('username')}")
+        except Exception as e:
+            print(f"Failed to delete old voice clone {existing_id}: {e}")
     if 'audio' not in request.files:
         return jsonify({"error": "Missing 'audio' file"}), 400
     file = request.files['audio']
@@ -633,6 +644,24 @@ def me():
         "email": user["email"],
         "voice_clone_id": user.get("voice_clone_id")
     }), 200
+
+@app.route('/delete-voice-clone', methods=['DELETE'])
+@token_required
+def delete_voice_clone():
+    """Endpoint to delete user's voice clone from ElevenLabs and MongoDB"""
+    existing_id = g.current_user.get('voice_clone_id')
+    if not existing_id:
+        return jsonify({"message": "No voice clone to delete"}), 404
+    # Delete on ElevenLabs
+    delete_url = f"https://api.elevenlabs.io/v1/voices/{existing_id}"
+    try:
+        del_resp = requests.delete(delete_url, headers=headers)
+        del_resp.raise_for_status()
+    except Exception as e:
+        print(f"Failed to delete voice clone {existing_id} on ElevenLabs: {e}")
+    # Remove from MongoDB
+    users_collection.update_one({"_id": g.current_user['_id']}, {"$unset": {"voice_clone_id": ""}})
+    return jsonify({"message": "Voice clone deleted"}), 200
 
 # Configuration for CORS and next endpoints ... existing code ...
 @app.after_request

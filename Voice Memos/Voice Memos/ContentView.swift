@@ -2131,6 +2131,12 @@ class AuthManager: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
 
+
+
+
+
+
+
             guard let httpResponse = response as? HTTPURLResponse else {
                 self.errorMessage = "Invalid response from server." // FIX: Use errorMessage
                 isLoading = false
@@ -2260,6 +2266,7 @@ struct VoiceCloneSheet: View {
     @State private var statusMessage: String?
     @State private var existingCloneId: String?
     @State private var isUploading = false
+    @State private var showOverwriteAlert = false // For overwrite confirmation
 
     var body: some View {
         NavigationView {
@@ -2270,10 +2277,34 @@ struct VoiceCloneSheet: View {
                     Text(cloneId)
                         .font(.subheadline)
                         .padding(.bottom)
-                    Button("Close") {
-                        presentationMode.wrappedValue.dismiss()
+                    HStack(spacing: 20) {
+                        Button("Overwrite Clone") {
+                            showOverwriteAlert = true
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+
+                        Button("Close") {
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.gray)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
                     }
-                    .padding()
+                    .padding(.bottom)
+                    .alert("Overwrite Voice Clone?", isPresented: $showOverwriteAlert) {
+                        Button("Delete", role: .destructive) {
+                            Task { await deleteClone() }
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("Are you sure you want to delete your existing voice clone? You can then record a new one.")
+                    }
                 } else {
                     Button(action: {
                         isRecording ? stopRecording() : startRecording()
@@ -2430,6 +2461,27 @@ struct VoiceCloneSheet: View {
                 statusMessage = "Upload failed: \(error.localizedDescription)"
             }
             isUploading = false
+        }
+    }
+
+    // MARK: - Delete existing clone
+    private func deleteClone() async {
+        guard let token = apiManager.authManager.authToken,
+              let url = URL(string: "\(apiManager.baseURL)/delete-voice-clone") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                existingCloneId = nil
+                statusMessage = "Existing voice clone deleted. Please record a new one."
+            } else {
+                let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+                statusMessage = "Delete failed: \(msg)"
+            }
+        } catch {
+            statusMessage = "Delete error: \(error.localizedDescription)"
         }
     }
 }
