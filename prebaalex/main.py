@@ -3,7 +3,7 @@ import tempfile
 import requests
 import json
 import traceback
-from flask import Flask, request, send_file, jsonify, render_template
+from flask import Flask, request, send_file, jsonify, render_template, g
 from dotenv import load_dotenv
 from pydub import AudioSegment
 import google.generativeai as genai
@@ -17,6 +17,7 @@ from datetime import datetime, timedelta # Added timedelta
 import certifi
 import jwt # Added for JWT
 from functools import wraps # Added for decorator
+from flask_cors import CORS  # type: ignore
 
 load_dotenv()
 API_KEY = os.getenv("ELEVEN_LABS_API_KEY")
@@ -43,7 +44,6 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "your-super-secret-jwt-key-fallback") # Added JWT Secret Key
 # Enable CORS for all routes
-from flask_cors import CORS
 CORS(app)
 
 # MongoDB Setup
@@ -79,14 +79,14 @@ def token_required(f):
         try:
             # Decode the token using the app's secret key
             data = jwt.decode(token, app.config['JWT_SECRET_KEY'], algorithms=["HS256"])
-            
-            # You might want to fetch the user from DB and pass it or store in flask.g
-            # from flask import g
-            # current_user = users_collection.find_one({"_id": ObjectId(data["user_id"])})
-            # if not current_user:
-            #     return jsonify({"message": "User not found for token"}), 401
-            # g.current_user = current_user
-
+            # Fetch user from database and attach to current context
+            try:
+                current_user = users_collection.find_one({"_id": ObjectId(data["user_id"])})
+                if not current_user:
+                    return jsonify({"message": "User not found for token"}), 401
+                g.current_user = current_user
+            except Exception as e:
+                return jsonify({"message": "Failed to fetch user from token"}), 500
         except jwt.ExpiredSignatureError:
             return jsonify({"message": "Token has expired!"}), 401
         except jwt.InvalidTokenError:
@@ -189,7 +189,7 @@ def _generate_thought_text(prompt, topic, value):
     try:
         # Intenta usar el SDK de Python primero
         try:
-            from google.generativeai.generative_models import GenerativeModel
+            from google.generativeai.generative_models import GenerativeModel  # type: ignore
             model = GenerativeModel(GOOGLE_MODEL_NAME)
             
             try:
@@ -322,12 +322,10 @@ def generate_audio():
     value = value_str.strip()
 
     try:
-        voice_id_to_use = ALEX_LATORRE_VOICE_ID
+        # Use the user's own voice_clone_id, error if not set
+        voice_id_to_use = g.current_user.get('voice_clone_id')
         if not voice_id_to_use:
-            # Intenta obtener el ID de nuevo si no se encontró al inicio
-            voice_id_to_use = get_alex_latorre_voice_id()
-            if not voice_id_to_use:
-                return jsonify({"error": "Voice 'Alex Latorre' not found or could not be retrieved. Please check backend logs."}), 500
+            return jsonify({"error": "No voice clone found for user. Please generate one first."}), 400
 
         # Generar el texto usando Gemini
         if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
@@ -355,76 +353,6 @@ Only return the voice note text. Nothing else. Always start with "Okay, so..."
             generated_text = _generate_thought_text(safe_prompt, topic, value)
 
         print(f"Texto generado1: {generated_text}")
-
-        # Ya no se clona la voz, se usa la existente.
-        # El siguiente bloque de código para crear/clonar voz se elimina.
-        # ----- INICIO BLOQUE ELIMINADO -----
-        # # Usar el archivo cloningvoice.mp3 predefinido
-        # audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloningvoice.mp3")
-
-        # # Verificar que el archivo existe
-        # if not os.path.exists(audio_path):
-        #     return jsonify({"error": "No se encontró el archivo de voz para clonar (cloningvoice.mp3)"}), 500
-
-        # print(f"Usando archivo de voz: {audio_path}, tamaño: {os.path.getsize(audio_path)} bytes")
-
-        # # Crear una nueva voz con el archivo de audio predefinido
-        # with open(audio_path, 'rb') as f:
-        #     file_content = f.read()
-
-        #     files = {
-        #         "files": (os.path.basename(audio_path), file_content, "audio/mpeg")
-        #     }
-        #     data = {
-        #         "name": "predefined-voice", # Podrías cambiar este nombre si quieres
-        #         "description": "Predefined voice for cloning",
-        #         "labels": '{"accent": ""}', # Ajusta las etiquetas si es necesario
-        #         "language": "es" # Ajusta el idioma si es necesario
-        #     }
-
-        #     resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files, data=data)
-
-        # print(f"Voice creation response status: {resp.status_code}")
-        # print(f"Voice creation response: {resp.text}")
-
-        # try:
-        #     resp.raise_for_status()
-        #     voice_data = resp.json()
-        #     voice_id = voice_data.get('voice_id')
-
-        #     if not voice_id:
-        #         error_msg = f"No se recibió voice_id en respuesta exitosa: {resp.text}"
-        #         print(f"ERROR: {error_msg}")
-        #         return jsonify({"error": error_msg}), 500
-
-        # except requests.HTTPError as e:
-        #     if "voice_limit_reached" in resp.text:
-        #         print("Se alcanzó el límite de voces. Intentando obtener la lista de voces existentes...")
-
-        #         try:
-        #             voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
-        #             voices_resp.raise_for_status()
-        #             voices = voices_resp.json()
-
-        #             # Intenta encontrar una voz clonada existente o una específica si es necesario
-        #             cloned_voices = [v for v in voices.get('voices', []) if v.get('category') == 'cloned'] # O busca por nombre
-
-        #             if cloned_voices:
-        #                 voice_id = cloned_voices[0].get('voice_id') # O la voz específica
-        #                 print(f"Usando voz existente con ID: {voice_id}")
-        #             else:
-        #                 return jsonify({"error": "No hay voces disponibles y se alcanzó el límite de creación de voces"}), 500
-        #         except Exception as ve:
-        #             print(f"Error al obtener voces: {ve}")
-        #             return jsonify({"error": "Error al obtener voces existentes"}), 500
-        #     else:
-        #         error_msg = f"Error HTTP {resp.status_code} de Eleven Labs API: {resp.text}"
-        #         print(f"ERROR: {error_msg}")
-        #         return jsonify({"error": error_msg}), resp.status_code
-        
-        # if not voice_id: # Safeguard
-        #      return jsonify({"error": "Failed to obtain a voice_id after creation/retrieval attempts"}), 500
-        # ----- FIN BLOQUE ELIMINADO -----
 
         tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use) # Usar voice_id_to_use
 
@@ -578,6 +506,62 @@ def verify_activation_code_endpoint():
 
     return jsonify({"valid": True, "message": "Activation code is valid"}), 200
 
+# Endpoint to generate a voice clone from user audio
+@app.route('/generate-voice-clone', methods=['POST'])
+@token_required
+def generate_voice_clone():
+    # If user already has a voice clone, return it without re-cloning
+    existing_id = g.current_user.get('voice_clone_id')
+    if existing_id:
+        return jsonify({"voice_clone_id": existing_id}), 200
+    
+    """Endpoint to upload user audio and create a voice clone on Eleven Labs"""
+    if 'audio' not in request.files:
+        return jsonify({"error": "Missing 'audio' file"}), 400
+    file = request.files['audio']
+    # Save temp file to check duration
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp:
+        file.save(temp.name)
+        # Validate duration <= 1 minute
+        try:
+            audio_seg = AudioSegment.from_file(temp.name)
+            if len(audio_seg) > 60 * 1000:
+                return jsonify({"error": "Audio duration exceeds 1 minute"}), 400
+        except Exception:
+            return jsonify({"error": "Invalid audio file"}), 400
+    # Prepare Eleven Labs request
+    files_payload = {"files": (file.filename, open(temp.name, 'rb'), file.mimetype)}
+    data_payload = {
+        "name": g.current_user['username'],
+        "description": f"Voice clone for user {g.current_user['username']}",
+        "labels": "{}",
+        "language": "es"
+    }
+    resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files_payload, data=data_payload)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        return jsonify({"error": f"ElevenLabs error: {resp.text}"}), resp.status_code
+    voice_data = resp.json()
+    # Check clone name (case-insensitive) but don't fail if it differs
+    clone_name = voice_data.get('name')
+    if clone_name and clone_name.lower() != g.current_user['username'].lower():
+        print(f"Warning: Mismatched clone name from ElevenLabs: '{clone_name}' vs '{g.current_user['username']}'. Proceeding anyway.")
+    voice_id = voice_data.get('voice_id')
+    if not voice_id:
+        return jsonify({"error": "No 'voice_id' returned from ElevenLabs"}), 500
+    # Extract sample URL if available
+    sample_url = None
+    samples = voice_data.get('samples') if isinstance(voice_data.get('samples'), list) else []
+    if samples:
+        first_sample = samples[0]
+        sample_url = first_sample.get('url') if isinstance(first_sample, dict) else None
+    # Update user record
+    users_collection.update_one({"_id": g.current_user['_id']}, {"$set": {"voice_clone_id": voice_id}})
+    resp = {"voice_clone_id": voice_id}
+    if sample_url:
+        resp['sample_url'] = sample_url
+    return jsonify(resp), 200
 
 # Configuración adicional para CORS
 @app.route('/generate-thought', methods=['GET'])
@@ -628,12 +612,47 @@ Only return the sentence, nothing else.
     print(f"Generated thought: {generated_text}")
     return jsonify({"thought": generated_text})
 
+@app.route('/me', methods=['GET'])
+@token_required
+def get_current_user():
+    """Endpoint to fetch current user's information including voice_clone_id"""
+    user = g.current_user
+    return jsonify({
+        "username": user.get('username'),
+        "voice_clone_id": user.get('voice_clone_id')
+    }), 200
+
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
+
+# Endpoint to save user settings
+@app.route('/save-settings', methods=['POST'])
+@token_required
+def save_settings():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+    stability = data.get('stability')
+    similarity_boost = data.get('similarity_boost')
+    add_background = data.get('add_background')
+    bg_volume = data.get('bg_volume')
+    if stability is None or similarity_boost is None or add_background is None or bg_volume is None:
+        return jsonify({"error": "Missing settings parameters"}), 400
+    settings_array = [stability, similarity_boost, add_background, bg_volume]
+    try:
+        users_collection.update_one(
+            {"_id": g.current_user["_id"]},
+            {"$push": {"Settings": settings_array}}
+        )
+        return jsonify({"message": "Settings saved successfully"}), 200
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to save settings"}), 500
 
 if __name__ == '__main__':
     # Puerto 5002 para evitar conflictos

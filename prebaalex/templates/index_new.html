@@ -170,6 +170,18 @@
                         <span id="bg_volume_value" style="width: 45px; text-align: center; font-weight: bold;">0.2</span>
                     </div>
                 </div>
+
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <label for="stability" style="width: 150px; margin: 0;">Stability:</label>
+                    <input type="range" id="stability" name="stability" min="0.0" max="1.0" step="0.05" value="0.7" style="flex-grow: 1;">
+                    <span id="stability_value" style="width: 45px; text-align: center; font-weight: bold;">0.7</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <label for="similarity_boost" style="width: 150px; margin: 0;">Similarity Boost:</label>
+                    <input type="range" id="similarity_boost" name="similarity_boost" min="0.0" max="1.0" step="0.05" value="0.85" style="flex-grow: 1;">
+                    <span id="similarity_boost_value" style="width: 45px; text-align: center; font-weight: bold;">0.85</span>
+                </div>
+                <button type="button" class="btn" id="saveSettingsBtn" disabled>💾 Save Settings</button>
             </div>
             
             <button type="submit" class="btn" id="generateBtn">
@@ -293,6 +305,60 @@
             document.getElementById('error').style.display = 'block';
             document.getElementById('result').style.display = 'none';
         }
+
+        // Settings controls
+        const stabilityInput = document.getElementById('stability');
+        const stabilityValSpan = document.getElementById('stability_value');
+        const similarityInput = document.getElementById('similarity_boost');
+        const similarityValSpan = document.getElementById('similarity_boost_value');
+        const saveBtn = document.getElementById('saveSettingsBtn');
+        const bgCheckbox = document.getElementById('add_background');
+        const bgInput = document.getElementById('bg_volume');
+
+        function enableSave() {
+            saveBtn.disabled = false;
+        }
+        [stabilityInput, similarityInput, bgCheckbox, bgInput].forEach(el => {
+            el.addEventListener('input', () => {
+                if (el === bgCheckbox) return; // change event for checkbox
+                const val = el.value;
+                if (el === stabilityInput) stabilityValSpan.textContent = val;
+                if (el === similarityInput) similarityValSpan.textContent = val;
+                enableSave();
+            });
+            if (el === bgCheckbox) {
+                el.addEventListener('change', enableSave);
+            }
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            const settings = {
+                stability: parseFloat(stabilityInput.value),
+                similarity_boost: parseFloat(similarityInput.value),
+                add_background: bgCheckbox.checked,
+                bg_volume: parseFloat(bgInput.value)
+            };
+            const token = localStorage.getItem('token');
+            try {
+                const resp = await fetch('/save-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? {'Authorization': `Bearer ${token}`} : {})
+                    },
+                    body: JSON.stringify(settings)
+                });
+                if (resp.ok) {
+                    saveBtn.disabled = true;
+                    alert('Settings saved successfully');
+                } else {
+                    const err = await resp.json();
+                    alert('Error saving settings: ' + (err.error || resp.statusText));
+                }
+            } catch (e) {
+                alert('Connection error: ' + e.message);
+            }
+        });
     </script>
 </body>
 </html>

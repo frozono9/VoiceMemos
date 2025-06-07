@@ -181,14 +181,6 @@ struct ContentView: View {
             // Bytes per second = 16000 samples/sec * 1 channel * 2 bytes/sample = 32000 bytes/sec
             // If the backend provides 16kHz mono PCM s16le, then this should be audioData.count / 32000
             // For now, let's assume the previous 16000 was a placeholder or for 8-bit.
-            // Given the context of voice memos, 16kHz mono is plausible.
-            // If the backend standardizes on, say, 24000 Hz, 16-bit, mono for ElevenLabs, then it's 48000 bytes/sec.
-            // Let's stick to a more common voice memo rate or make it configurable if possible.
-            // For a rough estimate, if it's raw PCM data.
-            // A common rate for voice is 16kHz, 16-bit mono. Bytes per second = 16000 * 2 = 32000.
-            // If the backend output is MP3 or another compressed format, this calculation is incorrect.
-            // However, the AVAudioPlayer path is preferred. This is just a fallback.
-            // Let's assume the 16000 was for a specific 8-bit scenario or a rough estimate.
             // To be safer, if we don't know the format, this estimation is very rough.
             // Let's use a more standard estimate for 16-bit mono audio at 16kHz
             let bytesPerSecondEstimate = 32000 // 16000 samples/sec * 2 bytes/sample (for 16-bit mono)
@@ -849,10 +841,10 @@ class VoiceAPIManager: ObservableObject {
     @Published var backgroundVolume: Double = 0.5
 
 
-    private var baseURL = "http://192.168.1.68:5002" // Changed to Mac\'s IP
+    let baseURL = "http://127.0.0.1:5002" // Use localhost for backend
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
     private let apiKey = "test_api_key" // Replace with your actual API key if needed
-    private var authManager: AuthManager // Add AuthManager instance
+    let authManager: AuthManager // Add AuthManager instance
 
     enum ConnectionStatus {
         case unknown
@@ -867,7 +859,6 @@ class VoiceAPIManager: ObservableObject {
         // This ensures that if a token exists, it\'s available for immediate use.
         // However, AuthManager itself handles loading from Keychain on its init.
         // So, direct loading here might be redundant if AuthManager is always fresh.
-        // Consider if authManager passed in is already configured.
         // If using @StateObject for AuthManager at a higher level, it should be up-to-date.
     }
 
@@ -1334,7 +1325,8 @@ struct EditScreenView: View {
     // Removed @State variables related to text input, generation, loading, and results
     @State private var showError = false // KEEP for API verification
     @State private var errorMessage = "" // KEEP for API verification
-    
+    @State private var showVoiceCloneSheet = false // Show voice clone popup
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -1374,13 +1366,23 @@ struct EditScreenView: View {
                     // headerView, infoView, textInputSection, generateButton, loadingView, resultView REMOVED
                     
                     advancedSettingsSection // KEEP (will bind to apiManager)
+                    
+                    // Button to show voice clone sheet
+                    Button(action: { showVoiceCloneSheet = true }) {
+                        Text("Clone Voice")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.green)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
                 }
                 .padding()
             }
-            .background(Color.black)
-            // .onAppear block REMOVED
-            .task {
-                await performAPIVerification()
+            // Present sheet for recording and cloning voice
+            .sheet(isPresented: $showVoiceCloneSheet) {
+                VoiceCloneSheet(apiManager: apiManager)
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -2028,7 +2030,7 @@ class AuthManager: ObservableObject {
     @Published var showError: Bool = false // ADDED: For displaying errors in the UI
     @Published var errorMessage: String? = nil // ADDED: Stores the error message
 
-    private let baseURL = "http://192.168.1.68:5002" // Ensure this is your server's IP
+    private let baseURL = "http://127.0.0.1:5002" // Ensure this is your server's IP
     // --- TEMPORARY DIAGNOSTIC for connection issues ---
     // private let baseURL = "http://127.0.0.1:5002" // Old localhost, incorrect for simulator/device
     // --- END TEMPORARY DIAGNOSTIC ---
@@ -2246,6 +2248,214 @@ class AuthManager: ObservableObject {
         } else {
              print("Token deleted from keychain or was not found.")
         }
+    }
+}
+
+// MARK: - Voice Clone Sheet
+struct VoiceCloneSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    @ObservedObject var apiManager: VoiceAPIManager
+    @State private var isRecording = false
+    @State private var audioRecorder: AVAudioRecorder?
+    @State private var recordingURL: URL?
+    @State private var isPlaying = false
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var statusMessage: String? = nil
+    @State private var existingCloneId: String? = nil // Fetch current clone ID
+    @State private var isUploading = false
+    private let scriptText = """
+I don’t know why, but I woke up thinking someone today is going to mention the Queen of Hearts… like, out of nowhere.
+
+As I brushed my teeth, I had this odd hunch that the number 17 is going to pop up today—maybe on a sign or someone’s shirt.
+
+Okay, so… I just woke up, and I had this weird dream that I feel like I should record. In the dream, I met someone… and they told me they had this insane fear of spiders. Like, full-on panic. I know, it’s random… but it felt kinda specific, so… yeah.
+
+As I opened the window this morning, I had this strange feeling that someone will mention something that happened in 1998.
+
+I don’t know what it means, but I had this soft feeling that I’ll hear the name Isabella at least once today.
+
+I had this little spark of a thought while tying my shoes—someone I run into today is totally going to be a Leo.
+
+While making coffee, I had this odd moment where I just knew someone was going to bring up Inception at some point today.
+
+As weird as it sounds, I woke up with this clear thought: I’m definitely going to see a purple umbrella today.
+"""
+    var body: some View {
+        VStack(spacing: 20) {
+            if let existing = existingCloneId {
+                Text("Existing voice clone ID: \(existing)")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            ScrollView {
+                Text(scriptText)
+                    .padding()
+            }
+            .frame(maxHeight: 200) // Limit height to enable scrolling
+            Divider()
+            HStack {
+                Button(action: startRecording) {
+                    Text(isRecording ? "Recording..." : "Start Recording")
+                        .padding()
+                        .background(isRecording ? Color.red : Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .disabled(isRecording)
+
+                Button(action: stopRecording) {
+                    Text("Stop")
+                        .padding()
+                        .background(Color.gray)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .disabled(!isRecording)
+            }
+            if let url = recordingURL {
+                Button(action: {
+                    if isPlaying {
+                        audioPlayer?.stop()
+                        isPlaying = false
+                    } else {
+                        playRecording()
+                    }
+                }) {
+                    Text(isPlaying ? "Stop Playback" : "Play Recording")
+                        .padding()
+                        .background(isPlaying ? Color.orange : Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+            }
+            Button(action: generateClone) {
+                if isUploading {
+                    ProgressView()
+                } else {
+                    Text("Generate Voice Clone")
+                }
+            }
+            .disabled(recordingURL == nil || isUploading)
+
+            if let msg = statusMessage {
+                Text(msg)
+                    .padding()
+            }
+            Spacer()
+            Button("Done") {
+                presentationMode.wrappedValue.dismiss()
+            }
+            .padding(.top)
+        }
+        .padding()
+        .onAppear(perform: configureSession)
+        .onAppear {
+            configureSession()
+            fetchExistingClone()
+        }
+    }
+
+    private func configureSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default)
+        try? session.setActive(true)
+    }
+
+    private func startRecording() {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("voice_clone.m4a")
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
+        audioRecorder = try? AVAudioRecorder(url: fileURL, settings: settings)
+        recordingURL = fileURL
+        audioRecorder?.record(forDuration: 60)
+        isRecording = true
+    }
+
+    private func stopRecording() {
+        audioRecorder?.stop()
+        isRecording = false
+    }
+
+    private func playRecording() {
+        guard let url = recordingURL else { return }
+        audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        audioPlayer?.delegate = AVDelegate(isPlaying: $isPlaying)
+        audioPlayer?.play()
+        isPlaying = true
+    }
+
+    private func generateClone() {
+        guard let url = recordingURL,
+              let token = apiManager.authManager.authToken else {
+            statusMessage = "Not authenticated or no recording";
+            return
+        }
+        isUploading = true
+        statusMessage = nil
+        var request = URLRequest(url: URL(string: "\(apiManager.baseURL)/generate-voice-clone")!)
+        request.httpMethod = "POST"
+        let boundary = UUID().uuidString
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var data = Data()
+        // Audio part
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"audio\"; filename=\"voice_clone.m4a\"\r\n".data(using: .utf8)!)
+        data.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        data.append(try! Data(contentsOf: url))
+        data.append("\r\n".data(using: .utf8)!)
+        data.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        URLSession.shared.uploadTask(with: request, from: data) { responseData, resp, error in
+            DispatchQueue.main.async {
+                isUploading = false
+                if let error = error {
+                    statusMessage = "Error: \(error.localizedDescription)"
+                    return
+                }
+                guard let httpResp = resp as? HTTPURLResponse,
+                      let d = responseData,
+                      httpResp.statusCode == 200,
+                      let json = try? JSONDecoder().decode([String: String].self, from: d),
+                      let voiceId = json["voice_clone_id"] else {
+                    statusMessage = "Failed to clone voice"
+                    return
+                }
+                statusMessage = "Voice clone id is \(voiceId)"
+            }
+        }.resume()
+    }
+
+    private func fetchExistingClone() {
+        guard let token = apiManager.authManager.authToken,
+              let url = URL(string: "\(apiManager.baseURL)/me") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard let data = data,
+                  let json = try? JSONDecoder().decode([String: String].self, from: data),
+                  let cloneId = json["voice_clone_id"] else { return }
+            DispatchQueue.main.async {
+                existingCloneId = cloneId
+            }
+        }.resume()
+    }
+}
+
+// AVAudioPlayerDelegate helper
+class AVDelegate: NSObject, AVAudioPlayerDelegate {
+    @Binding var isPlaying: Bool
+    init(isPlaying: Binding<Bool>) {
+        _isPlaying = isPlaying
+    }
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        isPlaying = false
     }
 }
 
