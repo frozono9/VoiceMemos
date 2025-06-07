@@ -124,11 +124,14 @@ struct ContentView: View {
         let pendingRecordingID = UUID() // Create a unique ID for this recording upfront
         let placeholderTitle = "Strange Dream"
         
+        // Calculate yesterday's date
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        
         // Create and set a placeholder recording immediately
         let placeholderRecording = RecordingData(
             id: pendingRecordingID,
             title: placeholderTitle,
-            date: formattedDate(Date()),
+            date: formattedDate(yesterday), // Use yesterday's date
             duration: "--:--"
         )
         self.generatedRecording = placeholderRecording
@@ -139,7 +142,7 @@ struct ContentView: View {
 
         Task {
             do {
-                print("ContentView: Starting audio generation with topic: \(selectedButton), value: \(inputText)")
+                print("ContentView: Starting audio generation with topic: \\(selectedButton), value: \\(inputText)")
                 let audioData = try await apiManager.generateAudioWithClonedVoice(
                     topic: selectedButton,
                     value: inputText
@@ -148,7 +151,7 @@ struct ContentView: View {
                 let finalRecording = RecordingData(
                     id: pendingRecordingID, // Use the same ID
                     title: "Strange Dream",
-                    date: formattedDate(Date()),
+                    date: formattedDate(yesterday), // Use yesterday's date
                     duration: estimateDuration(from: audioData),
                     audioData: audioData
                 )
@@ -174,8 +177,8 @@ struct ContentView: View {
                     // Optionally, update the placeholder to show an error state
                     let errorRecording = RecordingData(
                         id: pendingRecordingID, // Use the same ID
-                        title: "Error: \(selectedButton) - \(inputText.prefix(20))...",
-                        date: formattedDate(Date()),
+                        title: "Error: \\(selectedButton) - \\(inputText.prefix(20))...",
+                        date: formattedDate(yesterday), // Use yesterday's date
                         duration: "Error"
                     )
                     self.generatedRecording = errorRecording
