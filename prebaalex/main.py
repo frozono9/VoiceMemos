@@ -8,6 +8,15 @@ from dotenv import load_dotenv
 from pydub import AudioSegment
 import google.generativeai as genai
 from google.generativeai.client import configure
+from pymongo import MongoClient
+from bson import ObjectId
+import bcrypt
+from email_validator import validate_email, EmailNotValidError
+import re
+from datetime import datetime, timedelta # Added timedelta
+import certifi
+import jwt # Added for JWT
+from functools import wraps # Added for decorator
 
 load_dotenv()
 API_KEY = os.getenv("ELEVEN_LABS_API_KEY")
@@ -32,9 +41,63 @@ GOOGLE_MODEL_NAME = "gemini-2.0-flash"
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
+app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "your-super-secret-jwt-key-fallback") # Added JWT Secret Key
 # Enable CORS for all routes
 from flask_cors import CORS
 CORS(app)
+
+# MongoDB Setup
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+
+# Add certifi to the MongoDB client connection
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+
+db = client.voicememos_db # Database name
+users_collection = db.users
+activation_codes_collection = db.activation_codes
+
+# Create indexes for unique fields
+users_collection.create_index("username", unique=True)
+users_collection.create_index("email", unique=True)
+activation_codes_collection.create_index("code", unique=True)
+
+# Decorator for JWT requirement
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1]
+            except IndexError:
+                return jsonify({"message": "Bearer token malformed"}), 401
+
+        if not token:
+            return jsonify({"message": "Token is missing!"}), 401
+
+        try:
+            # Decode the token using the app's secret key
+            data = jwt.decode(token, app.config['JWT_SECRET_KEY'], algorithms=["HS256"])
+            
+            # You might want to fetch the user from DB and pass it or store in flask.g
+            # from flask import g
+            # current_user = users_collection.find_one({"_id": ObjectId(data["user_id"])})
+            # if not current_user:
+            #     return jsonify({"message": "User not found for token"}), 401
+            # g.current_user = current_user
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token has expired!"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Token is invalid!"}), 401
+        except Exception as e:
+            print(f"Token validation error: {e}")
+            traceback.print_exc() # It's good to log the full traceback for unexpected errors
+            return jsonify({"message": "Token processing error"}), 401
+            
+        return f(*args, **kwargs)
+    return decorated
 
 # URLs para la API de Eleven Labs
 ELEVEN_VOICE_ADD_URL = "https://api.elevenlabs.io/v1/voices/add"
@@ -203,7 +266,8 @@ def _generate_thought_text(prompt, topic, value):
     # Fallback si falla todo
     return f"Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
 
-@app.route('/generate-audio', methods=['POST'])
+@app.route('/generate-audio-cloned', methods=['POST'])
+@token_required
 def generate_audio():
     """Endpoint para generar audio. Soporta form-data (HTML) y JSON (Swift app)."""
     topic_str = None
@@ -393,6 +457,127 @@ Only return the voice note text. Nothing else. Always start with "Okay, so..."
         print(f"Error general: {e}")
         traceback.print_exc()
         return jsonify({"error": f"Error al generar audio: {str(e)}"}), 500
+
+# --- User Authentication Endpoints ---
+
+def is_valid_email(email):
+    try:
+        validate_email(email)
+        return True
+    except EmailNotValidError:
+        return False
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    activation_code_str = data.get('activation_code')
+
+    if not all([username, email, password, activation_code_str]):
+        return jsonify({"error": "Missing username, email, password, or activation_code"}), 400
+
+    if not is_valid_email(email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    # Validate activation code
+    activation_code = activation_codes_collection.find_one({"code": activation_code_str})
+    if not activation_code:
+        return jsonify({"error": "Invalid activation code"}), 400
+    if activation_code.get("used"):
+        return jsonify({"error": "Activation code already used"}), 400
+
+    # Check for existing user
+    if users_collection.find_one({"username": username}):
+        return jsonify({"error": "Username already exists"}), 409 # 409 Conflict
+    if users_collection.find_one({"email": email}):
+        return jsonify({"error": "Email already exists"}), 409
+
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+    try:
+        user_id = users_collection.insert_one({
+            "username": username,
+            "email": email,
+            "password": hashed_password,
+            "created_at": datetime.utcnow()
+        }).inserted_id
+
+        # Mark activation code as used
+        activation_codes_collection.update_one(
+            {"_id": activation_code["_id"]},
+            {
+                "$set": {
+                    "used": True,
+                    "used_by": user_id,
+                    "used_at": datetime.utcnow()
+                }
+            }
+        )
+        # For now, just returning success. JWT generation would go here.
+        return jsonify({"message": "User registered successfully", "user_id": str(user_id)}), 201
+
+    except Exception as e:
+        print(f"Error during registration: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred during registration."}), 500
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    email_or_username = data.get('email') # Swift client sends 'email' field for email/username
+    password = data.get('password')
+
+    if not email_or_username or not password:
+        return jsonify({"error": "Missing email/username or password"}), 400
+
+    # Try to find user by email or username
+    user = users_collection.find_one({"$or": [{"email": email_or_username}, {"username": email_or_username}]})
+
+    if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
+        # Password matches, generate JWT
+        token_payload = {
+            'user_id': str(user['_id']),
+            'username': user['username'],
+            'exp': datetime.utcnow() + timedelta(hours=24)  # Token expires in 24 hours
+        }
+        try:
+            token = jwt.encode(token_payload, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+            return jsonify({"message": "Login successful", "token": token}), 200
+        except Exception as e:
+            print(f"Error generating token: {e}")
+            return jsonify({"error": "Failed to generate token"}), 500
+    else:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+@app.route('/verify-activation-code', methods=['POST'])
+def verify_activation_code_endpoint():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+    
+    code_str = data.get('code')
+    if not code_str:
+        return jsonify({"error": "Missing 'code' parameter"}), 400
+
+    activation_code = activation_codes_collection.find_one({"code": code_str})
+
+    if not activation_code:
+        return jsonify({"valid": False, "message": "Activation code not found"}), 404
+    
+    if activation_code.get("used"):
+        return jsonify({"valid": False, "message": "Activation code has already been used"}), 200 # Or 400/409 depending on desired behavior
+
+    return jsonify({"valid": True, "message": "Activation code is valid"}), 200
+
 
 # Configuración adicional para CORS
 @app.route('/generate-thought', methods=['GET'])

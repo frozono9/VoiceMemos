@@ -6,10 +6,23 @@ import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGen
 struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
-    @State private var currentScreen: AppScreen = .home // Ensure initial screen is .home
+    @State private var currentScreen: AppScreen = .createAccount // Start with createAccount
     @State private var generatedRecording: RecordingData? = nil
-    @StateObject private var apiManager = VoiceAPIManager() // Added
+    // @StateObject private var apiManager = VoiceAPIManager() // OLD
+    // @StateObject private var authManager = AuthManager() // OLD
+
+    @StateObject private var authManager: AuthManager
+    @StateObject private var apiManager: VoiceAPIManager
+    
     @State private var generationError: String? = nil // Added for error display
+
+    @MainActor // ADDED @MainActor
+    init() {
+        let authManagerInstance = AuthManager()
+        _authManager = StateObject(wrappedValue: authManagerInstance)
+        // Pass the same AuthManager instance to VoiceAPIManager
+        _apiManager = StateObject(wrappedValue: VoiceAPIManager(authManager: authManagerInstance))
+    }
 
     enum AppScreen {
         case buttonSelection
@@ -18,11 +31,26 @@ struct ContentView: View {
         case editScreen
         case home // Added home screen case
         case tutorial // Added tutorial screen case
+        case createAccount // Added for user registration
+        case login // Added for user login
     }
     
     var body: some View {
         ZStack { // Added ZStack for potential global loading/error overlay
             switch currentScreen {
+            case .createAccount:
+                CreateAccountView(authManager: authManager, onAccountCreated: {
+                    // After account creation, maybe go to login or directly to home
+                    currentScreen = .login 
+                }, onGoToLogin: {
+                    currentScreen = .login
+                })
+            case .login:
+                LoginView(authManager: authManager, onLoggedIn: {
+                    currentScreen = .home // Navigate to home after login
+                }, onGoToCreateAccount: {
+                    currentScreen = .createAccount
+                })
             case .buttonSelection:
                 ButtonSelectionView(selectedButton: $selectedButton) {
                     currentScreen = .textInput
@@ -55,23 +83,38 @@ struct ContentView: View {
                     }
                 )
             case .home: // Handle home screen
-                NavigationView { // Added NavigationView
-                    HomeScreenView(
-                        onPerformTapped: {
-                            // Reset flow-specific states for a fresh "Perform" flow
-                            self.selectedButton = ""
-                            self.inputText = ""
-                            self.generatedRecording = nil 
-                            currentScreen = .buttonSelection
-                        },
-                        onSettingsTapped: {
-                            currentScreen = .editScreen
-                        },
-                        onTutorialTapped: {
-                            currentScreen = .tutorial
+                if authManager.authToken != nil { // Only show home if logged in
+                    NavigationView { // Added NavigationView
+                        HomeScreenView(
+                            authManager: authManager, // Pass authManager to HomeScreenView
+                            onPerformTapped: {
+                                // Reset flow-specific states for a fresh "Perform" flow
+                                self.selectedButton = ""
+                                self.inputText = ""
+                                self.generatedRecording = nil 
+                                currentScreen = .buttonSelection
+                            },
+                            onSettingsTapped: {
+                                currentScreen = .editScreen
+                            },
+                            onTutorialTapped: {
+                                currentScreen = .tutorial
+                            },
+                            onSignOutTapped: {
+                                // authManager.logout() is called within HomeScreenView's button action
+                                currentScreen = .login // Navigate to login screen
+                            }
+                        )
+                        .navigationTitle("Voice Memos AI") // Added title
                         }
-                    )
-                    .navigationTitle("Voice Memos AI") // Added title
+                } else {
+                    // If not logged in, redirect to login or create account
+                    // This is a fallback, ideally currentScreen should be managed correctly
+                    LoginView(authManager: authManager, onLoggedIn: {
+                        currentScreen = .home
+                    }, onGoToCreateAccount: {
+                        currentScreen = .createAccount
+                    })
                 }
             case .tutorial: // Handle tutorial screen
                 NavigationView { // Added NavigationView
@@ -99,6 +142,21 @@ struct ContentView: View {
                 .cornerRadius(10)
                 .frame(maxWidth: 300)
                 .transition(.opacity)
+            }
+        }
+        .onAppear {
+            // Check if a token exists. If so, consider the user logged in.
+            // Otherwise, show the Create Account or Login screen.
+            // This logic might need refinement based on how you want to handle first launch vs. subsequent launches.
+            if authManager.authToken == nil {
+                // currentScreen = .createAccount // Or .login if you prefer
+                // Let's check if we have a stored token first
+                authManager.loadTokenFromKeychain()
+                if authManager.authToken == nil {
+                     currentScreen = .createAccount // Default to create account if no token
+                } else {
+                    currentScreen = .home // Go home if token exists
+                }
             }
         }
     }
@@ -217,9 +275,11 @@ struct ContentView: View {
 }
 
 struct HomeScreenView: View {
+    @ObservedObject var authManager: AuthManager // Added AuthManager
     let onPerformTapped: () -> Void
     let onSettingsTapped: () -> Void
     let onTutorialTapped: () -> Void
+    let onSignOutTapped: () -> Void // Added for sign-out
 
     var body: some View {
         ZStack {
@@ -273,6 +333,24 @@ struct HomeScreenView: View {
                     .cornerRadius(12)
                 }
                 
+                Button(action: {
+                    authManager.logout() // Call logout on authManager
+                    onSignOutTapped()    // Call the provided closure
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.left.square.fill")
+                            .font(.title2)
+                        Text("Sign Out")
+                            .fontWeight(.medium)
+                    }
+                    .font(.title2)
+                    .padding()
+                    .frame(maxWidth: 280, minHeight: 60)
+                    .background(Color.red) // Sign-out button color
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+
                 Spacer()
                 Spacer() // More space at the bottom
             }
@@ -771,9 +849,10 @@ class VoiceAPIManager: ObservableObject {
     @Published var backgroundVolume: Double = 0.5
 
 
-    private var baseURL = "http://192.168.1.51:5002" // Changed to Mac's IP
+    private var baseURL = "http://192.168.1.68:5002" // Changed to Mac\'s IP
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
     private let apiKey = "test_api_key" // Replace with your actual API key if needed
+    private var authManager: AuthManager // Add AuthManager instance
 
     enum ConnectionStatus {
         case unknown
@@ -781,22 +860,32 @@ class VoiceAPIManager: ObservableObject {
         case failed
     }
     
+    // Add an initializer to accept AuthManager
+    init(authManager: AuthManager) { // NEW - authManager is now required
+        self.authManager = authManager
+        // Attempt to load token when VoiceAPIManager is initialized
+        // This ensures that if a token exists, it\'s available for immediate use.
+        // However, AuthManager itself handles loading from Keychain on its init.
+        // So, direct loading here might be redundant if AuthManager is always fresh.
+        // Consider if authManager passed in is already configured.
+        // If using @StateObject for AuthManager at a higher level, it should be up-to-date.
+    }
+
+    // MARK: - Public API Methods
+    
     func verifyAPIKey() async throws -> Bool {
         // Try the primary URL first
         do {
             let result = try await verifyAPIWithURL(baseURL)
-            // No need for DispatchQueue.main.async here anymore because the whole class is @MainActor
             self.connectionStatus = .connected
             return result
         } catch {
             print("Primary URL failed: \(error.localizedDescription)")
             
-            // If primary URL fails, try fallbacks
             for fallbackURL in fallbackURLs {
                 print("Primary URL failed, trying fallback: \(fallbackURL)")
                 do {
                     let result = try await verifyAPIWithURL(fallbackURL)
-                    // No need for DispatchQueue.main.async here anymore
                     self.connectionStatus = .connected
                     return result
                 } catch {
@@ -804,8 +893,6 @@ class VoiceAPIManager: ObservableObject {
                 }
             }
             
-            // If all URLs fail, update status and throw error
-            // No need for DispatchQueue.main.async here anymore
             self.connectionStatus = .failed
             throw NetworkError.connectionFailed
         }
@@ -813,6 +900,7 @@ class VoiceAPIManager: ObservableObject {
     
     private func verifyAPIWithURL(_ urlString: String) async throws -> Bool {
         guard let url = URL(string: "\(urlString)/verify-api") else {
+            print("VoiceAPIManager: Invalid URL for API verification: \(urlString)/verify-api")
             throw NetworkError.invalidURL
         }
         
@@ -840,18 +928,25 @@ class VoiceAPIManager: ObservableObject {
         // Try primary URL first
         do {
             return try await generateThoughtWithURL(baseURL, topic: topic, value: value)
-        } catch {
+        } catch let error as NetworkError where error.isAuthError {
+            print("VoiceAPIManager: Authentication error during thought generation: \(error.localizedDescription)")
+            throw error // Re-throw auth errors directly
+        }
+        catch {
             print("Primary URL failed for thought generation: \(error.localizedDescription)")
             
             // Try fallbacks
             for fallbackURL in fallbackURLs {
                 do {
                     return try await generateThoughtWithURL(fallbackURL, topic: topic, value: value)
-                } catch {
+                } catch let error as NetworkError where error.isAuthError {
+                     print("VoiceAPIManager: Authentication error during thought generation on fallback: \(error.localizedDescription)")
+                     throw error // Re-throw auth errors directly
+                }
+                catch {
                     print("Fallback URL \(fallbackURL) failed for thought generation: \(error.localizedDescription)")
                 }
             }
-            
             // If all URLs fail, throw the error
             throw error
         }
@@ -866,158 +961,227 @@ class VoiceAPIManager: ObservableObject {
         
         print("Requesting thought from: \(url.absoluteString)")
         
-        // Create a URLRequest to have more control over the request
         var request = URLRequest(url: url)
         request.timeoutInterval = 15 // Set a reasonable timeout
+        request.httpMethod = "GET" // Assuming GET for generate-thought
+
+        // Add Authorization header if token exists
+        if let token = authManager.authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            print("VoiceAPIManager: No auth token found for /generate-thought. Proceeding without.")
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("Invalid HTTP response")
+                print("Invalid HTTP response for /generate-thought")
                 throw NetworkError.invalidResponse
             }
             
+            print("VoiceAPIManager: /generate-thought response status: \(httpResponse.statusCode)")
+
+            if httpResponse.statusCode == 401 {
+                 print("VoiceAPIManager: Unauthorized (401) for /generate-thought.")
+                 throw NetworkError.unauthorized
+            }
+
             if httpResponse.statusCode != 200 {
-                if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let errorMsg = errorJson["error"] as? String {
-                    print("Server error: \(errorMsg)")
-                    throw NetworkError.serverError(message: errorMsg)
+                if let errorJson = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    let errorMessage = errorJson.error ?? errorJson.message ?? "Unknown server error"
+                    print("VoiceAPIManager: Server error from /generate-thought: \(errorMessage)")
+                    throw NetworkError.serverError(message: errorMessage)
+                } else {
+                     let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+                     print("VoiceAPIManager: Server error (non-JSON) from /generate-thought: \(responseBody)")
+                     throw NetworkError.serverError(message: "Server error: \(responseBody)")
                 }
-                throw NetworkError.serverError(message: "Unknown server error")
             }
             
+            // Expecting JSON with a "thought" field
             do {
                 let thoughtResponse = try JSONDecoder().decode(ThoughtResponse.self, from: data)
+                print("VoiceAPIManager: Successfully received thought: \(thoughtResponse.thought)")
                 return thoughtResponse.thought
             } catch {
-                print("JSON decoding error: \(error)")
-                // Try to extract the message directly from the JSON
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let thought = json["thought"] as? String {
-                    return thought
-                }
+                let responseBody = String(data: data, encoding: .utf8) ?? "No response body for decoding error"
+                print("VoiceAPIManager: Failed to decode ThoughtResponse: \(error.localizedDescription). Body: \(responseBody)")
                 throw NetworkError.decodingError
             }
-        } catch {
-            print("Network error during thought generation: \(error.localizedDescription)")
+
+        } catch let error as NetworkError {
+            print("VoiceAPIManager: NetworkError during thought generation: \(error.localizedDescription)")
             throw error
+        } catch {
+            print("VoiceAPIManager: Unexpected error during thought generation: \(error.localizedDescription)")
+            throw NetworkError.unknown(message: error.localizedDescription)
         }
     }
-    
-    // Modified to use stored settings, removed default parameters for them
+
+    // New method for generating audio with cloned voice
     func generateAudioWithClonedVoice(topic: String, value: String) async throws -> Data {
         // Try primary URL first
         do {
-            return try await generateAudioWithURL(baseURL,
-                                                topic: topic,
-                                                value: value,
-                                                stability: self.stability, // Use stored value
-                                                similarityBoost: self.similarityBoost, // Use stored value
-                                                addBackground: self.addBackground, // Use stored value
-                                                backgroundVolume: self.backgroundVolume) // Use stored value
-        } catch {
-            print("Primary URL failed for audio generation: \\(error.localizedDescription)")
-            
+            return try await generateAudioWithClonedVoiceWithURL(baseURL, topic: topic, value: value)
+        } catch let error as NetworkError where error.isAuthError {
+            print("VoiceAPIManager: Authentication error during audio generation: \(error.localizedDescription)")
+            throw error // Re-throw auth errors directly
+        }
+        catch {
+            print("Primary URL failed for audio generation: \(error.localizedDescription)")
             // Try fallbacks
             for fallbackURL in fallbackURLs {
                 do {
-                    return try await generateAudioWithURL(fallbackURL,
-                                                        topic: topic,
-                                                        value: value,
-                                                        stability: self.stability,
-                                                        similarityBoost: self.similarityBoost,
-                                                        addBackground: self.addBackground,
-                                                        backgroundVolume: self.backgroundVolume)
-                } catch {
-                    print("Fallback URL \\(fallbackURL) failed for audio generation: \\(error.localizedDescription)")
+                    return try await generateAudioWithClonedVoiceWithURL(fallbackURL, topic: topic, value: value)
+                } catch let error as NetworkError where error.isAuthError {
+                     print("VoiceAPIManager: Authentication error during audio generation on fallback: \(error.localizedDescription)")
+                     throw error // Re-throw auth errors directly
+                }
+                catch {
+                    print("Fallback URL \(fallbackURL) failed for audio generation: \(error.localizedDescription)")
                 }
             }
             // If all URLs fail, throw the error
             throw error
         }
     }
-    
-    private func generateAudioWithURL(_ urlString: String, topic: String, value: String, stability: Double, similarityBoost: Double, addBackground: Bool, backgroundVolume: Double) async throws -> Data { // Added addBackground and backgroundVolume
-        // First, generate the thought
-        let thought = try await generateThoughtWithURL(urlString, topic: topic, value: value)
-        
-        print("Generated thought: \(thought)")
-        
-        // Now send request to generate audio from that thought
-        guard let url = URL(string: "\(urlString)/generate-audio") else {
+
+    private func generateAudioWithClonedVoiceWithURL(_ urlString: String, topic: String, value: String) async throws -> Data {
+        guard let url = URL(string: "\(urlString)/generate-audio-cloned") else {
+            print("VoiceAPIManager: Invalid URL for /generate-audio-cloned: \(urlString)/generate-audio-cloned")
             throw NetworkError.invalidURL
         }
+        
+        print("Requesting cloned audio from: \(url.absoluteString)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30 // Set a longer timeout for audio generation
-        
-        // Include the thought, topic, value, and background sound parameters in the request
+        request.timeoutInterval = 60 // Increased timeout for audio generation
+
+        // Add Authorization header if token exists
+        if let token = authManager.authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            print("VoiceAPIManager: Auth token is missing for /generate-audio-cloned. This endpoint requires authentication.")
+            // Consider whether to throw an error or proceed if the endpoint allows unauthenticated access (it doesn't here)
+            throw NetworkError.authenticationRequired
+        }
+
         let requestBody: [String: Any] = [
-            "text": thought, // Assuming the backend expects the generated thought as 'text'
             "topic": topic,
-            "value": value,
-            "stability": stability,
-            "similarity_boost": similarityBoost,
-            "add_background": addBackground, // Pass to backend
-            "background_volume": backgroundVolume // Pass to backend
+            "value": value, // This is the text to be converted to speech
+            "stability": self.stability,
+            "similarity_boost": self.similarityBoost
         ]
-        
-        print("Sending request to Python backend with: \(requestBody)")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+        } catch {
+            print("VoiceAPIManager: Failed to encode request body for /generate-audio-cloned: \(error.localizedDescription)")
+            throw NetworkError.unknown(message: "Failed to create request: \(error.localizedDescription)")
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("Invalid HTTP response")
+                print("VoiceAPIManager: Invalid HTTP response for /generate-audio-cloned")
                 throw NetworkError.invalidResponse
             }
             
+            print("VoiceAPIManager: /generate-audio-cloned response status: \(httpResponse.statusCode)")
+
+            if httpResponse.statusCode == 401 {
+                 print("VoiceAPIManager: Unauthorized (401) for /generate-audio-cloned.")
+                 throw NetworkError.unauthorized
+            }
+
             if httpResponse.statusCode != 200 {
-                if let errorData = String(data: data, encoding: .utf8) {
-                    print("Server error: \(errorData)")
-                    throw NetworkError.serverError(message: errorData)
+                if let errorJson = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    let errorMessage = errorJson.error ?? errorJson.message ?? "Unknown server error"
+                    print("VoiceAPIManager: Server error from /generate-audio-cloned: \(errorMessage)")
+                    throw NetworkError.serverError(message: errorMessage)
+                } else {
+                     let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+                     print("VoiceAPIManager: Server error (non-JSON) from /generate-audio-cloned: \(responseBody)")
+                     throw NetworkError.serverError(message: "Server error: \(responseBody)")
                 }
-                throw NetworkError.serverError(message: "Unknown server error")
             }
             
-            print("Successfully received MP3 data from server: \(data.count) bytes")
-            return data
-        } catch {
-            print("Network error during audio generation: \(error.localizedDescription)")
+            // Check if the content type is audio
+            if httpResponse.mimeType?.starts(with: "audio/") == true {
+                print("VoiceAPIManager: Successfully received audio data from /generate-audio-cloned.")
+                return data
+            } else {
+                let mimeTypeForLog = httpResponse.mimeType ?? "unknown"
+                if let jsonError = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let message = jsonError["message"] as? String ?? jsonError["error"] as? String {
+                    print("VoiceAPIManager: Expected audio, but received \(mimeTypeForLog) with JSON error: \(message)")
+                    throw NetworkError.serverError(message: "Server returned non-audio content: \(message)")
+                } else {
+                    let responseBody = String(data: data, encoding: .utf8) ?? "No body content"
+                    print("VoiceAPIManager: Expected audio, but received \(mimeTypeForLog): \(responseBody)")
+                    throw NetworkError.serverError(message: "Expected audio data, but received type \(mimeTypeForLog). Body: \(responseBody)")
+                }
+            }
+
+        } catch let error as NetworkError {
+            print("VoiceAPIManager: NetworkError during cloned audio generation: \(error.localizedDescription)")
             throw error
+        } catch {
+            print("VoiceAPIManager: Unexpected error during cloned audio generation: \(error.localizedDescription)")
+            throw NetworkError.unknown(message: error.localizedDescription)
         }
     }
 }
 
+// Add ErrorResponse struct for decoding server error messages if they are JSON
+struct ErrorResponse: Decodable {
+    let error: String?
+    let message: String? // Some Flask responses might use 'message'
+}
 
+// ADDED: Define TokenResponse
+struct TokenResponse: Decodable {
+    let token: String
+}
 
-// MARK: - Response Models
-struct ThoughtResponse: Codable {
+// ADDED: Define ThoughtResponse
+struct ThoughtResponse: Decodable {
     let thought: String
 }
 
-// MARK: - Error Types
+
 enum NetworkError: Error, LocalizedError {
     case invalidURL
-    case invalidResponse
-    case serverError(message: String)
-    case decodingError
     case connectionFailed
-    
+    case invalidResponse
+    case decodingError
+    case serverError(message: String)
+    case authenticationRequired // Added
+    case unauthorized // Added for 401 specifically
+    case unknown(message: String)
+
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid URL"
-        case .invalidResponse:
-            return "Invalid response from server"
-        case .serverError(let message):
-            return "Server error: \(message)"
-        case .decodingError:
-            return "Error decoding server response"
-        case .connectionFailed:
-            return "Failed to connect to the server. Please ensure the Python backend is running."
+        case .invalidURL: return "The URL provided was invalid."
+        case .connectionFailed: return "Failed to connect to the server. Please check your network connection and the server address."
+        case .invalidResponse: return "The server returned an invalid response."
+        case .decodingError: return "Failed to decode the server's response."
+        case .serverError(let message): return "Server error: \(message)" // Corrected interpolation
+        case .authenticationRequired: return "Authentication is required for this action. Please log in."
+        case .unauthorized: return "Unauthorized. Your session may have expired or your credentials are not valid. Please log in again."
+        case .unknown(let message): return "An unknown error occurred: \(message)" // Corrected interpolation
+        }
+    }
+
+    // Helper to check if the error is an authentication/authorization error
+    var isAuthError: Bool {
+        switch self {
+        case .authenticationRequired, .unauthorized:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -1120,7 +1284,7 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
             // Add this before playing
             try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
         } catch {
-            print("AudioManager: Failed to override output port to speaker: \\(error.localizedDescription)")
+            print("AudioManager: Failed to override output port to speaker: \(error.localizedDescription)") // Corrected interpolation
         }
         
         do {
@@ -1337,7 +1501,6 @@ struct EditScreenView: View {
         do {
             let isValid = try await apiManager.verifyAPIKey()
             if !isValid {
-                // Ensure UI updates are on the main actor, though showErrorAlert might handle this
                 await MainActor.run {
                     showErrorAlert("API Key is invalid or verification failed.")
                 }
@@ -1345,9 +1508,9 @@ struct EditScreenView: View {
             }
         } catch {
             await MainActor.run {
-                showErrorAlert("Could not verify API key: \\(error.localizedDescription)")
+                showErrorAlert("Could not verify API key: \(error.localizedDescription)") // Corrected interpolation
             }
-            print("EditScreenView: Could not verify API key: \\(error.localizedDescription)")
+            print("EditScreenView: Could not verify API key: \(error.localizedDescription)") // Corrected interpolation
         }
     }
     
@@ -1420,7 +1583,7 @@ struct AudioPlayerView: View {
             do {
                 try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
             } catch {
-                print("AudioPlayerView: Failed to override output port to speaker: \\(error.localizedDescription)")
+                print("AudioPlayerView: Failed to override output port to speaker: \(error.localizedDescription)")
             }
             player.play()
             startTimer()
@@ -1678,6 +1841,411 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Authentication Views
+
+struct CreateAccountView: View {
+    @ObservedObject var authManager: AuthManager
+    let onAccountCreated: () -> Void
+    let onGoToLogin: () -> Void
+
+    @State private var username = ""
+    @State private var email = ""
+    @State private var password = ""
+    @State private var activationCode = ""
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Text("Create Account")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .padding(.bottom, 30)
+
+                TextField("Username", text: $username)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+
+                TextField("Email", text: $email)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+
+                SecureField("Password", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                TextField("Activation Code", text: $activationCode)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
+                Button(action: createAccount) {
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Text("Create Account")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .disabled(isLoading)
+
+                Button("Already have an account? Login") {
+                    onGoToLogin()
+                }
+                .font(.footnote)
+
+                Spacer()
+            }
+            .padding()
+            .navigationBarHidden(true) // Hide navigation bar for a cleaner look
+        }
+    }
+
+    func createAccount() {
+        isLoading = true
+        errorMessage = nil
+        Task {
+            let success = await authManager.createAccount(
+                username: username,
+                email: email,
+                password: password,
+                activationCode: activationCode
+            )
+            await MainActor.run {
+                isLoading = false
+                if success {
+                    onAccountCreated()
+                } else {
+                    errorMessage = authManager.errorMessage ?? "Failed to create account." // FIX: Use errorMessage
+                }
+            }
+        }
+    }
+}
+
+struct LoginView: View {
+    @ObservedObject var authManager: AuthManager
+    let onLoggedIn: () -> Void
+    let onGoToCreateAccount: () -> Void
+
+    @State private var emailOrUsername = "" // Can be email or username
+    @State private var password = ""
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Text("Login")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .padding(.bottom, 30)
+
+                TextField("Username or Email", text: $emailOrUsername)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+
+                SecureField("Password", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                if let error = errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
+                Button(action: login) {
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Text("Login")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.green)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .disabled(isLoading)
+
+                Button("Don't have an account? Create One") {
+                    onGoToCreateAccount()
+                }
+                .font(.footnote)
+
+                Spacer()
+            }
+            .padding()
+            .navigationBarHidden(true)
+        }
+    }
+
+    func login() {
+        isLoading = true
+        errorMessage = nil
+        Task {
+            let success = await authManager.login(emailOrUsername: emailOrUsername, password: password)
+            await MainActor.run {
+                isLoading = false
+                if success {
+                    onLoggedIn()
+                } else {
+                    errorMessage = authManager.errorMessage ?? "Login failed." // FIX: Use errorMessage
+                }
+            }
+        }
+    }
+}
+
+
+// MARK: - AuthManager (With Network Logic and Keychain)
+import Security // For Keychain
+
+@MainActor
+class AuthManager: ObservableObject {
+    @Published var isAuthenticated: Bool = false
+    @Published var authToken: String? = nil
+    @Published var isLoading: Bool = false // For UI updates during network calls
+    @Published var showError: Bool = false // ADDED: For displaying errors in the UI
+    @Published var errorMessage: String? = nil // ADDED: Stores the error message
+
+    private let baseURL = "http://192.168.1.68:5002" // Ensure this is your server's IP
+    // --- TEMPORARY DIAGNOSTIC for connection issues ---
+    // private let baseURL = "http://127.0.0.1:5002" // Old localhost, incorrect for simulator/device
+    // --- END TEMPORARY DIAGNOSTIC ---
+
+    private let keychainService = "com.yourapp.VoiceMemosAI" // Unique identifier for keychain service
+    private let keychainAccount = "userToken" // Key for the token
+
+    init() {
+        loadTokenFromKeychain() // Load token on init
+    }
+
+    func createAccount(username: String, email: String, password: String, activationCode: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/register") else { // FIX: Corrected URL interpolation
+            print("Invalid URL for registration")
+            DispatchQueue.main.async {
+                self.errorMessage = "Invalid URL for registration."
+                self.showError = true
+            }
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "username": username,
+            "email": email,
+            "password": password,
+            "activation_code": activationCode
+        ]
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+       
+        } catch {
+            self.errorMessage = "Failed to encode request: \(error.localizedDescription)" // FIX: Use errorMessage
+            isLoading = false
+            return false
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                self.errorMessage = "Invalid response from server." // FIX: Use errorMessage
+                isLoading = false
+                return false
+            }
+
+            let bodyStringForLogging = String(data: data, encoding: .utf8) ?? "empty_body_for_logging"
+            print("Create Account Response: Status \(httpResponse.statusCode), Body: \(bodyStringForLogging)")
+
+
+            if httpResponse.statusCode == 201 { // Successfully created
+                isLoading = false
+                return true
+            } else {
+                // Try to parse error message from backend
+                let responseBody = String(data: data, encoding: .utf8) // Initialize here for error reporting
+                if let errorJson = try? JSONDecoder().decode([String: String].self, from: data),
+                   let errMsg = errorJson["error"] ?? errorJson["message"] { // Check for "message" too
+                    self.errorMessage = errMsg // FIX: Use errorMessage
+                } else {
+                    self.errorMessage = "Failed to create account. Status: \(httpResponse.statusCode). Details: \(responseBody ?? "No details provided")" // FIX: Use errorMessage
+                }
+                isLoading = false
+                return false
+            }
+        } catch {
+            print("Detailed network error in createAccount: \(error)")
+            self.errorMessage = "Network request failed: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
+            isLoading = false
+            return false
+        }
+    }
+
+    func login(emailOrUsername: String, password: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/login") else { // FIX: Corrected URL interpolation
+            print("Invalid URL for login")
+            DispatchQueue.main.async {
+                self.errorMessage = "Invalid URL for login."
+                self.showError = true
+            }
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "email": emailOrUsername, // Backend expects 'email' for email/username
+            "password": password
+        ]
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            print("Detailed encoding error in login: \(error)")
+            self.errorMessage = "Failed to encode request: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
+            isLoading = false
+            return false
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                self.errorMessage = "Invalid response from server." // FIX: Use errorMessage
+                isLoading = false
+                return false
+            }
+            
+            let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+            print("Login Response Status: \(httpResponse.statusCode)")
+            print("Login Response Body: \(responseBody)")
+
+            if httpResponse.statusCode == 200 {
+                do {
+                    let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+                    await MainActor.run {
+                        self.authToken = tokenResponse.token
+                        self.isAuthenticated = true
+                        self.errorMessage = nil // Clear error on success
+                        self.showError = false
+                    }
+                    return true
+                } catch {
+                    print("Detailed decoding error in login: \(error)")
+                    self.errorMessage = "Failed to decode token: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
+                    isLoading = false
+                    return false
+                }
+            } else {
+                 if let json = try? JSONDecoder().decode([String: String].self, from: data),
+                    let message = json["error"] ?? json["message"] { // Prefer "error" then "message"
+                    self.errorMessage = message // FIX: Use errorMessage
+                 } else {
+                    let responseBodyString = String(data: data, encoding: .utf8) ?? "No details provided"
+                    self.errorMessage = "Login failed. Status: \(httpResponse.statusCode). Details: \(responseBodyString)" // FIX: Use errorMessage
+                }
+                isLoading = false
+                return false
+            }
+        } catch {
+            print("Detailed network error in login: \(error)")
+            self.errorMessage = "Network request failed: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
+            isLoading = false
+            return false
+        }
+    }
+    
+    func logout() {
+        self.authToken = nil // This will trigger deleteFromKeychain
+    }
+
+    // MARK: - Keychain Management
+    func saveTokenToKeychain(token: String) {
+        guard let data = token.data(using: .utf8) else { return }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+
+        SecItemDelete(query as CFDictionary) // Delete any existing item first
+       
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status != errSecSuccess {
+            print("Error saving token to keychain: \(status)")
+        } else {
+            print("Token saved to keychain successfully.")
+        }
+    }
+
+    func loadTokenFromKeychain() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: kCFBooleanTrue!,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+
+        if status == errSecSuccess {
+            if let retrievedData = dataTypeRef as? Data,
+               let token = String(data: retrievedData, encoding: .utf8) {
+                self.authToken = token
+                print("Token loaded from keychain.")
+            } else {
+                 print("Failed to decode token from keychain.")
+            }
+        } else if status == errSecItemNotFound {
+            print("No token found in keychain.")
+        } 
+        else {
+            print("Error loading token from keychain: \(status)")
+        }
+    }
+
+    func deleteTokenFromKeychain() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            print("Error deleting token from keychain: \(status)")
+        } else {
+             print("Token deleted from keychain or was not found.")
+        }
     }
 }
 

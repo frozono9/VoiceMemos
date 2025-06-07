@@ -4,3 +4,8 @@ python-dotenv
 pydub
 flask-cors
 google-generativeai
+pymongo
+bcrypt
+email-validator
+certifi
+PyJWT
