@@ -833,8 +833,7 @@ class VoiceAPIManager: ObservableObject {
     @Published var addBackground: Bool = true
     @Published var backgroundVolume: Double = 0.5
 
-
-    let baseURL = "http://192.168.1.68:5002" // MODIFIED: Use correct server IP
+    let baseURL = "https://voicememos-production.up.railway.app" // MODIFIED: Use Railway deployment URL
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
     private let apiKey = "test_api_key" // Replace with your actual API key if needed
     let authManager: AuthManager // Add AuthManager instance
@@ -2130,6 +2129,12 @@ class AuthManager: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+
+
+
+
+
+
 
 
 
