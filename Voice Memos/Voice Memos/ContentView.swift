@@ -2022,7 +2022,7 @@ class AuthManager: ObservableObject {
     @Published var showError: Bool = false // ADDED: For displaying errors in the UI
     @Published var errorMessage: String? = nil // ADDED: Stores the error message
 
-    private let baseURL = "http://192.168.1.68:5002" // MODIFIED: Use correct server IP
+    private let baseURL = "https://voicememos-production.up.railway.app" // MODIFIED: Use Railway production URL
     // --- TEMPORARY DIAGNOSTIC for connection issues ---
     // private let baseURL = "http://127.0.0.1:5002" // Old localhost, incorrect for simulator/device
     // --- END TEMPORARY DIAGNOSTIC ---
@@ -2129,19 +2129,6 @@ class AuthManager: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-
-
-
-
-
-
-
-
-
-
-
-
-
             guard let httpResponse = response as? HTTPURLResponse else {
                 self.errorMessage = "Invalid response from server." // FIX: Use errorMessage
                 isLoading = false
