@@ -42,7 +42,7 @@ else:
         traceback.print_exc()
 
 # Define Gemini model name
-GOOGLE_MODEL_NAME = "gemini-1.5-flash" # Updated to a common model, ensure this is intended
+GOOGLE_MODEL_NAME = "gemini-2.0-flash" # Updated to a common model, ensure this is intended
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
@@ -328,22 +328,33 @@ def generate_audio():
         else:
             # Construct the safe_prompt with language instructions for Gemini
             safe_prompt = f"""
-Generate a short, natural voice note in {user_language} — like someone just woke up and is casually recording a weird dream or morning hunch. It should sound spontaneous and human, like the kind of thing you’d say out loud to yourself when you barely remember it.
-The voice note MUST be in {user_language}.
-It should include the value ({value}), but not in a forced way — just let it come up naturally, like it’s part of what they remembered from the dream. It shouldn’t directly mention the topic ({topic}), but it should influence the tone and content — think of it as the unspoken context.
+──────────  ROLE  ──────────
+You are a fully awake person who just got ready for the day — you’ve showered, maybe had coffee — and you're recording a quick, casual voice note in {user_language}.  
+You suddenly remembered a weird dream, or had a strange passing thought, and you want to say it out loud before you forget.
 
-Use real, messy language typical for {user_language}: hesitations, pauses, filler words (e.g., for English: "uh," "kinda," "I think," "or something"; for Spanish: "eh," "como que," "creo," "o algo así" - use natural equivalents in {user_language}). The vibe should be loose, sleepy, and conversational. Don’t over-explain, pretty straight to the point. Don’t sound like you’re trying to be clever. Just like someone talking into their phone, half-awake. 
+────────  MUST‑HAVES  ────────
+1. **Language**: The entire note must be in {user_language}.  
+2. **Tone**: Awake, calm, and casual — like you're talking to yourself or a friend in the morning.  
+3. **Value inclusion**: The value **({value})** should be mentioned naturally, not forced.  
+4. **Topic as subtext**: Do **NOT** mention the topic **({topic})** — but let it guide the general mood or situation.  
+5. **Length**: One or two short sentences — max 15 seconds to read aloud.  
+6. **Emotion**: Curious, chill, or a bit puzzled — no drama or exaggeration. Think: “I just remembered something odd.”
 
-Tone: neutral or curious — like “maybe that means something…” (or its equivalent in {user_language}).
+────────  STYLE TIPS  ────────
+• Use conversational, natural speech for {user_language} — like how people talk out loud in the morning.  
+• Feel free to use a few filler words typical for the language (e.g., “no sé”, “o algo”, “creo”, “genre”, “je pense”, “kinda”, etc.).  
+• Avoid sounding too polished — contractions and incomplete thoughts are fine.  
+• Keep punctuation relaxed — ellipses, commas, or nothing at all.  
 
-Length constraint: Keep it short enough that it would take no more than 10-15 seconds to say out loud.
+────────  EXAMPLES (adjust to {user_language})  ────────
+EN:  “I was brushing my teeth and suddenly remembered this weird dream… someone was terrified of spiders, like legit panic. No idea why it came back to me.”  
+ES:  “Estaba ya vistiéndome y me vino esta imagen rarísima… alguien hablaba de arañas y se ponía super nervioso, no sé qué fue eso.”  
+FR:  “J’étais prêt à sortir et là, paf, j’me souviens d’un truc dans mon rêve… un mec flippait grave à cause des araignées. C’est revenu d’un coup.”  
+DE:  “Ich war schon fertig im Bad und plötzlich kam so ein Bild aus dem Traum hoch… irgendwer hatte mega Angst vor Spinnen. Ganz seltsam.”  
+IT:  “Stavo per uscire e all’improvviso mi è tornata in mente questa scena… qualcuno parlava dei ragni e sembrava super agitato. Boh.”
 
-Examples (these examples are in English, adapt the style and content if generating for a different language like {user_language}. The key is the spontaneous, sleepy, and brief nature):
-	•	“Okay, so I just woke up and had this random dream where this girl was freaking out about spiders. Like… not just scared, but full-on panic. No idea why that stuck.”
-	•	“I dunno, I had this dream where someone was talking about going to Paris. Felt super real for some reason. Might hear it again today or something.”
-	•	“Weird dream. Some guy was bragging about getting an A+ in math. I don’t even know who he was.”
-
-Only return the voice note text, in {user_language}. Nothing else. Always start with "{prompt_start_phrase}"
+────────  OUTPUT RULE  ────────
+Return only the voice note in {user_language}, no additional text, labels, or formatting.
 """
             generated_text = _generate_thought_text(safe_prompt, topic, value, user_language)
 
