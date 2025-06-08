@@ -229,17 +229,19 @@ struct ContentView: View {
                     }
                 )
             case .editScreen:
-                EditScreenView(
-                    apiManager: apiManager,
-                    onBackTapped: { // MODIFIED: No longer receives RecordingData
-                        // OLD:
-                        // if let newRecordingFromEditScreen = newRecordingFromEditScreen {
-                        //     // Log that audio was generated but is not directly used in the main flow from here
-                        //     print("ContentView: EditScreenView returned with new recording: \\(newRecordingFromEditScreen.title), duration: \\(newRecordingFromEditScreen.duration). This is not used when returning to Home from Settings.")
-                        // }
-                        currentScreen = .home // New: Always return to home
-                    }
-                )
+                NavigationView {
+                    EditScreenView(
+                        apiManager: apiManager,
+                        onBackTapped: { // MODIFIED: No longer receives RecordingData
+                            // OLD:
+                            // if let newRecordingFromEditScreen = newRecordingFromEditScreen {
+                            //     // Log that audio was generated but is not directly used in the main flow from here
+                            //     print("ContentView: EditScreenView returned with new recording: \\(newRecordingFromEditScreen.title), duration: \\(newRecordingFromEditScreen.duration). This is not used when returning to Home from Settings.")
+                            // }
+                            currentScreen = .home // New: Always return to home
+                        }
+                    )
+                }
             case .home: // Handle home screen
                 if authManager.isAuthenticated { // Use isAuthenticated instead of authToken check
                     NavigationView { // Added NavigationView
@@ -425,133 +427,526 @@ struct HomeScreenView: View {
     let onSignOutTapped: () -> Void // Added for sign-out
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea() // Dark background consistent with other views
-
-            VStack(spacing: 25) { // Adjusted spacing
-                Spacer()
-
-                Button(action: onPerformTapped) {
-                    HStack(spacing: 10) { // Added spacing for icon and text
-                        Image(systemName: "waveform.path.ecg")
-                            .font(.title2) // Match text font size or slightly larger
-                        Text("Perform")
-                            .fontWeight(.medium)
-                    }
-                    .font(.title2)
-                    .padding()
-                    .frame(maxWidth: 280, minHeight: 60) // Adjusted size
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12) // Slightly more rounded
-                }
-
-                Button(action: onSettingsTapped) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "gearshape.fill") // Changed icon to filled
-                            .font(.title2)
-                        Text("Settings")
-                            .fontWeight(.medium)
-                    }
-                    .font(.title2)
-                    .padding()
-                    .frame(maxWidth: 280, minHeight: 60)
-                    .background(Color.secondary) // Changed to a more standard settings color
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                }
-
-                Button(action: onTutorialTapped) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "book.fill") // Changed icon to filled
-                            .font(.title2)
-                        Text("Tutorial")
-                            .fontWeight(.medium)
-                    }
-                    .font(.title2)
-                    .padding()
-                    .frame(maxWidth: 280, minHeight: 60)
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                }
+        GeometryReader { geometry in
+            ZStack {
+                // Background gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.05, green: 0.05, blue: 0.1),
+                        Color.black
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
                 
-                Button(action: {
-                    authManager.logout() // Call logout on authManager
-                    onSignOutTapped()    // Call the provided closure
-                }) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.left.square.fill")
-                            .font(.title2)
-                        Text("Sign Out")
-                            .fontWeight(.medium)
+                VStack(spacing: 0) {
+                    // Header Section
+                    VStack(spacing: 16) {
+                        // Welcome message
+                        VStack(spacing: 8) {
+                            Text("Good \(timeOfDay)")
+                                .font(.system(size: 32, weight: .light, design: .default))
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            if let username = authManager.currentUser?.username {
+                                Text(username.capitalized)
+                                    .font(.system(size: 40, weight: .bold, design: .default))
+                                    .foregroundColor(.white)
+                            } else {
+                                Text("Welcome")
+                                    .font(.system(size: 40, weight: .bold, design: .default))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding(.top, 60)
+                        
+                        // Subtitle
+                        Text("Create AI-powered voice memos")
+                            .font(.system(size: 18, weight: .medium, design: .default))
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
                     }
-                    .font(.title2)
-                    .padding()
-                    .frame(maxWidth: 280, minHeight: 60)
-                    .background(Color.red) // Sign-out button color
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .padding(.horizontal, 32)
+                    
+                    Spacer()
+                    
+                    // Main Action Section
+                    VStack(spacing: 24) {
+                        // Primary Perform Button
+                        Button(action: onPerformTapped) {
+                            HStack(spacing: 16) {
+                                Image(systemName: "waveform.path.ecg")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Perform")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("Perform the routine")
+                                        .font(.system(size: 14, weight: .regular))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 20)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.0, green: 0.48, blue: 1.0), // iOS Blue
+                                        Color(red: 0.0, green: 0.38, blue: 0.9)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(16)
+                            .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                        }
+                        .scaleEffect(1.0)
+                        .animation(.easeInOut(duration: 0.1), value: 1.0)
+                        
+                        // Secondary Actions Grid
+                        HStack(spacing: 16) {
+                            // Settings Button
+                            Button(action: onSettingsTapped) {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "gearshape.fill")
+                                        .font(.system(size: 28, weight: .medium))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("Settings")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                        )
+                                )
+                            }
+                            
+                            // Tutorial Button
+                            Button(action: onTutorialTapped) {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "book.fill")
+                                        .font(.system(size: 28, weight: .medium))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("Tutorial")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                        )
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 32)
+                    
+                    Spacer()
+                    
+                    // Bottom Section
+                    VStack(spacing: 16) {
+                        // Sign Out Button
+                        Button(action: {
+                            authManager.logout()
+                            onSignOutTapped()
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.red)
+                                
+                                Text("Sign Out")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.red.opacity(0.1))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        
+                        // App version info
+                        Text("Voice Memos AI • Version 1.0")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 32)
                 }
-
-                Spacer()
-                Spacer() // More space at the bottom
             }
         }
-        // .navigationTitle("Voice Memos AI") // This is set on the NavigationView in ContentView
+    }
+    
+    // Helper computed property for time-based greeting
+    private var timeOfDay: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12:
+            return "Morning"
+        case 12..<17:
+            return "Afternoon"
+        case 17..<22:
+            return "Evening"
+        default:
+            return "Evening"
+        }
     }
 }
 
+
 struct TutorialView: View {
-    let onBackTapped: () -> Void // Action to go back
-
+    let onBackTapped: () -> Void
+    @State private var currentPage = 0
+    
     var body: some View {
-        ScrollView { // Added ScrollView for potentially longer content
-            VStack(alignment: .leading, spacing: 15) { // Adjusted spacing
+        GeometryReader { geometry in
+            ZStack {
+                // Premium gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBlue).opacity(0.1),
+                        Color(.systemPurple).opacity(0.05),
+                        Color(.systemBackground)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Text("Welcome to Voice Memos AI!")
-                    .font(.title) // Larger title
-                    .fontWeight(.bold)
-                    .padding(.bottom, 10)
-
-                Text("Follow these steps to create your AI voice memo:")
-                    .font(.headline)
-                    .padding(.bottom, 5)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Tap 'Perform' on the Home screen.", systemImage: "1.circle")
-                    Label("Select a topic category (e.g., 'Cards', 'Movies') or choose 'Custom'.", systemImage: "2.circle")
-                    Label("Enter specific text related to your chosen topic.", systemImage: "3.circle")
-                    Label("The app will then generate a short voice memo.", systemImage: "4.circle")
-                    Label("Find your new memo at the top of the 'All Recordings' list.", systemImage: "5.circle")
-                    Label("Tap on any memo to reveal playback controls.", systemImage: "6.circle")
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Header Section
+                        VStack(spacing: 16) {
+                            // App Icon with glow effect
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(.systemBlue).opacity(0.2),
+                                                Color(.systemPurple).opacity(0.1)
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 80, height: 80)
+                                
+                                Image(systemName: "waveform.circle.fill")
+                                    .font(.system(size: 40, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(.systemBlue),
+                                                Color(.systemPurple)
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Voice Memos AI")
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                
+                                Text("Transform your ideas into intelligent voice memos")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .padding(.top, 20)
+                        
+                        // Features Overview Cards
+                        VStack(spacing: 16) {
+                            FeatureCard(
+                                icon: "brain.head.profile",
+                                iconColor: Color(.systemBlue),
+                                title: "AI-Powered Generation",
+                                description: "Create voice memos on any topic using advanced AI technology"
+                            )
+                            
+                            FeatureCard(
+                                icon: "person.wave.2.fill",
+                                iconColor: Color(.systemPurple),
+                                title: "Voice Cloning",
+                                description: "Use your own voice or choose from premium AI voices"
+                            )
+                            
+                            FeatureCard(
+                                icon: "text.bubble.fill",
+                                iconColor: Color(.systemGreen),
+                                title: "Smart Content",
+                                description: "Generate contextual content for cards, movies, stories, and more"
+                            )
+                        }
+                        
+                        // How it Works Section
+                        VStack(alignment: .leading, spacing: 20) {
+                            HStack {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(Color(.systemYellow))
+                                
+                                Text("How It Works")
+                                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 24)
+                            
+                            VStack(spacing: 16) {
+                                StepCard(
+                                    number: 1,
+                                    title: "Choose Your Topic",
+                                    description: "Select from categories like Cards, Movies, Numbers, or create custom content",
+                                    icon: "square.grid.2x2.fill"
+                                )
+                                
+                                StepCard(
+                                    number: 2,
+                                    title: "Enter Your Ideas",
+                                    description: "Provide specific details or let AI generate content for you",
+                                    icon: "text.cursor"
+                                )
+                                
+                                StepCard(
+                                    number: 3,
+                                    title: "AI Magic Happens",
+                                    description: "Advanced AI creates a natural-sounding voice memo tailored to your needs",
+                                    icon: "sparkles"
+                                )
+                                
+                                StepCard(
+                                    number: 4,
+                                    title: "Listen & Enjoy",
+                                    description: "Your personalized voice memo appears in your recordings list",
+                                    icon: "play.circle.fill"
+                                )
+                            }
+                        }
+                        
+                        // Tips Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(Color(.systemOrange))
+                                
+                                Text("Pro Tips")
+                                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 24)
+                            
+                            VStack(spacing: 12) {
+                                TipCard(
+                                    icon: "mic.fill",
+                                    text: "Record your voice in Settings to create personalized AI clones"
+                                )
+                                
+                                TipCard(
+                                    icon: "wand.and.stars",
+                                    text: "Try different topics to discover the AI's creative capabilities"
+                                )
+                                
+                                TipCard(
+                                    icon: "headphones",
+                                    text: "Use headphones for the best audio experience"
+                                )
+                            }
+                        }
+                        
+                        // Get Started Button
+                        Button(action: onBackTapped) {
+                            HStack(spacing: 12) {
+                                Text("Get Started")
+                                    .font(.system(size: 18, weight: .semibold))
+                                
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(.systemBlue),
+                                        Color(.systemPurple)
+                                    ]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: Color(.systemBlue).opacity(0.3), radius: 8, x: 0, y: 4)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 32)
+                    }
+                    .padding(.horizontal, 20)
                 }
-                .font(.body)
-                
-                Spacer(minLength: 20) // Add some space before the next section
-
-                Text("Additional Info:")
-                    .font(.headline)
-                    .padding(.bottom, 5)
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("The 'Settings' screen (accessed from Home) shows advanced options. Currently, the AI voice is fixed.", systemImage: "gearshape.fill")
-                    Label("Generated audio is dated as 'yesterday' for this version.", systemImage: "calendar.badge.clock")
-                }
-                .font(.body)
-
             }
-            .padding()
         }
-        .navigationTitle("How to Use") // Set title here
-        .navigationBarTitleDisplayMode(.inline) // Prefer inline for sub-screens
+        .navigationTitle("Tutorial")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { // Changed to .navigationBarTrailing for "Done"
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") {
                     onBackTapped()
                 }
+                .font(.system(size: 17, weight: .medium))
             }
         }
+    }
+}
+
+// MARK: - Tutorial Support Views
+
+struct FeatureCard: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(iconColor.opacity(0.15))
+                    .frame(width: 48, height: 48)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(iconColor)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text(description)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            
+            Spacer()
+        }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+}
+
+struct StepCard: View {
+    let number: Int
+    let title: String
+    let description: String
+    let icon: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Step number with gradient
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(.systemBlue),
+                                Color(.systemPurple)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 36, height: 36)
+                
+                Text("\(number)")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+            };                VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color(.systemBlue))
+                    
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+                
+                Text(description)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            
+            Spacer()
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+    }
+}
+
+struct TipCard: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(Color(.systemOrange))
+                .frame(width: 24)
+            
+            Text(text)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.leading)
+            
+            Spacer()
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -1617,32 +2012,187 @@ struct EditScreenView: View {
     @ObservedObject var apiManager: VoiceAPIManager
     let onBackTapped: () -> Void
     
-    @State private var showError = false // This might be redundant now if apiManager.errorMessage drives the alert
-    // @State private var errorMessage = "" // This will now come from apiManager.errorMessage
     @State private var showVoiceCloneSheet = false
     @State private var showSaveConfirmation = false
     @State private var saveStatusMessage = ""
 
-    private var settingsFormView: some View {
-        let baseForm = Form {
-            languagePreferenceSection
-            advancedSettingsSection
-            voiceCloneSection
-
-            Section {
-                Button("Save Settings") {
-                    Task {
-                        await apiManager.updateUserSettings()
-                        saveStatusMessage = "Settings saved successfully."
-                        showSaveConfirmation = true
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Premium gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBlue).opacity(0.1),
+                        Color(.systemPurple).opacity(0.05),
+                        Color(.systemBackground)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Header Section
+                        VStack(spacing: 16) {
+                            // Settings Icon with glow effect
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(.systemBlue).opacity(0.2),
+                                                Color(.systemPurple).opacity(0.1)
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 80, height: 80)
+                                
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: 40, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(.systemBlue),
+                                                Color(.systemPurple)
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Settings")
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                
+                                Text("Customize your AI voice experience")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .padding(.top, 20)
+                        
+                        // Language Preference Section
+                        SettingsSection(
+                            title: "Language Preference",
+                            icon: "globe.americas.fill",
+                            iconColor: Color(.systemGreen)
+                        ) {
+                            LanguageSelectionCard(apiManager: apiManager)
+                        }
+                        
+                        // Voice Settings Section
+                        SettingsSection(
+                            title: "Voice Quality",
+                            icon: "waveform",
+                            iconColor: Color(.systemBlue)
+                        ) {
+                            VStack(spacing: 20) {
+                                SliderCard(
+                                    title: "Voice Stability",
+                                    subtitle: "Controls consistency and predictability",
+                                    value: $apiManager.stability,
+                                    range: 0.0...1.0,
+                                    step: 0.05,
+                                    icon: "dial.high.fill"
+                                )
+                                
+                                SliderCard(
+                                    title: "Voice Similarity", 
+                                    subtitle: "How closely it matches your voice",
+                                    value: $apiManager.similarityBoost,
+                                    range: 0.0...1.0,
+                                    step: 0.05,
+                                    icon: "person.crop.circle.fill"
+                                )
+                            }
+                        }
+                        
+                        // Audio Enhancement Section
+                        SettingsSection(
+                            title: "Audio Enhancement",
+                            icon: "speaker.wave.3.fill",
+                            iconColor: Color(.systemOrange)
+                        ) {
+                            VStack(spacing: 20) {
+                                ToggleCard(
+                                    title: "Background Sound",
+                                    subtitle: "Add ambient audio to your recordings",
+                                    isOn: $apiManager.addBackground,
+                                    icon: "music.note"
+                                )
+                                
+                                if apiManager.addBackground {
+                                    SliderCard(
+                                        title: "Background Volume",
+                                        subtitle: "Adjust ambient audio level",
+                                        value: $apiManager.backgroundVolume,
+                                        range: 0.0...1.0,
+                                        step: 0.05,
+                                        icon: "speaker.wave.2.fill"
+                                    )
+                                    .transition(.opacity.combined(with: .slide))
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.3), value: apiManager.addBackground)
+                        }
+                        
+                        // Voice Clone Section
+                        SettingsSection(
+                            title: "Voice Cloning",
+                            icon: "person.wave.2.fill",
+                            iconColor: Color(.systemPurple)
+                        ) {
+                            VoiceCloneCard(showVoiceCloneSheet: $showVoiceCloneSheet)
+                        }
+                        
+                        // Save Settings Button
+                        Button(action: {
+                            Task {
+                                await apiManager.updateUserSettings()
+                                saveStatusMessage = "Settings saved successfully!"
+                                showSaveConfirmation = true
+                            }
+                        }) {
+                            HStack(spacing: 12) {
+                                if apiManager.isLoading {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18, weight: .medium))
+                                }
+                                
+                                Text(apiManager.isLoading ? "Saving..." : "Save Settings")
+                                    .font(.system(size: 18, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(.systemBlue),
+                                        Color(.systemPurple)
+                                    ]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: Color(.systemBlue).opacity(0.3), radius: 8, x: 0, y: 4)
+                        }
+                        .disabled(apiManager.isLoading)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 32)
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-            }
-            Section {
-                if apiManager.isLoading {
-                    ProgressView()
+                    .padding(.horizontal, 20)
                 }
             }
         }
@@ -1651,123 +2201,251 @@ struct EditScreenView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Back") {
-                    self.onBackTapped()
+                    onBackTapped()
                 }
+                .font(.system(size: 17, weight: .medium))
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    onBackTapped()
+                }
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color(.systemBlue),
+                            Color(.systemPurple)
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
             }
         }
-
-        return baseForm
-            .onAppear {
-                let apiManager = self.apiManager // Define local constant
-                apiManager.loadSettingsFromAuth()
-                apiManager.errorMessage = nil // Use local constant
-            }
-            .sheet(isPresented: $showVoiceCloneSheet) {
-                VoiceCloneSheet(apiManager: self.apiManager)
-            }
-            .alert("Error", isPresented: Binding<Bool>(
-                get: { self.apiManager.errorMessage != nil },
-                set: { _ in self.apiManager.errorMessage = nil }
-            )) {
-                Button("OK") { self.apiManager.errorMessage = nil }
-            } message: {
-                Text(self.apiManager.errorMessage ?? "An error occurred")
-            }
-            .alert("Settings", isPresented: self.$showSaveConfirmation) {
-                Button("OK") { }
-            } message: {
-                Text(self.saveStatusMessage)
-            }
-    }
-
-    var body: some View {
-        NavigationView { // Added NavigationView for title and toolbar
-            settingsFormView
+        .onAppear {
+            apiManager.loadSettingsFromAuth()
+            apiManager.errorMessage = nil
+        }
+        .sheet(isPresented: $showVoiceCloneSheet) {
+            VoiceCloneSheet(apiManager: apiManager)
+        }
+        .alert("Error", isPresented: Binding<Bool>(
+            get: { apiManager.errorMessage != nil },
+            set: { _ in apiManager.errorMessage = nil }
+        )) {
+            Button("OK") { apiManager.errorMessage = nil }
+        } message: {
+            Text(apiManager.errorMessage ?? "An error occurred")
+        }
+        .alert("Settings Saved", isPresented: $showSaveConfirmation) {
+            Button("OK") { }
+        } message: {
+            Text(saveStatusMessage)
         }
     }
+}
+
+// MARK: - Settings Support Views
+
+struct SettingsSection<Content: View>: View {
+    let title: String
+    let icon: String
+    let iconColor: Color
+    @ViewBuilder let content: Content
     
-    private var languagePreferenceSection: some View {
-        Section(header: Text("Language Preference")) {
-            Menu {
-                ForEach(Language.allCases) { lang in
-                    Button(action: {
-                        apiManager.language = lang
-                        // Optionally, trigger a save operation here if needed immediately
-                        // Task { await apiManager.updateUserSettings(...) }
-                    }) {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(iconColor)
+                
+                Text(title)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 24)
+            
+            content
+        }
+    }
+}
+
+struct LanguageSelectionCard: View {
+    @ObservedObject var apiManager: VoiceAPIManager
+    
+    var body: some View {
+        Menu {
+            ForEach(Language.allCases) { lang in
+                Button(action: {
+                    apiManager.language = lang
+                }) {
+                    HStack {
                         Text(lang.displayName)
+                        if apiManager.language == lang {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
                     }
                 }
-            } label: {
-                HStack {
+            }
+        } label: {
+            HStack(spacing: 16) {
+                Image(systemName: "globe.americas.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(Color(.systemGreen))
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Language")
-                    Spacer()
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
                     Text(apiManager.language.displayName)
-                        .foregroundColor(.gray)
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(.secondary)
                 }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
             }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
         }
     }
+}
+
+struct SliderCard: View {
+    let title: String
+    let subtitle: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let icon: String
     
-    private var advancedSettingsSection: some View {
-        Section(header: Text("Advanced Voice Settings")) {
-            VStack(alignment: .leading) {
-                Text("Stability: \(apiManager.stability, specifier: "%.2f")")
-                Slider(value: $apiManager.stability, in: 0.0...1.0, step: 0.05)
-            }
-            VStack(alignment: .leading) {
-                Text("Similarity Boost: \(apiManager.similarityBoost, specifier: "%.2f")")
-                Slider(value: $apiManager.similarityBoost, in: 0.0...1.0, step: 0.05)
-            }
-            // The following settings are now part of UserSettings and backend
-            Toggle("Add Background Sound", isOn: $apiManager.addBackground)
-            VStack(alignment: .leading) {
-                Text("Background Volume: \(apiManager.backgroundVolume, specifier: "%.2f")")
-                Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05)
-                    .disabled(!apiManager.addBackground) // Disable if addBackground is false
-            }
-            .opacity(apiManager.addBackground ? 1.0 : 0.5) // Visually indicate disabled state
-        }
-    }
-    
-    // Added section for Voice Cloning
-    private var voiceCloneSection: some View {
-        Section(header: Text("Voice Clone Management")) {
-            Button("Manage Voice Clone") {
-                showVoiceCloneSheet = true
-            }
-        }
-    }
-    
-    // generateButton, loadingView, resultView REMOVED
-    // canGenerate, formatTime REMOVED
-    
-    // private func showErrorAlert(_ message: String) { // REMOVED - using apiManager.errorMessage now
-    //     errorMessage = message
-    //     showError = true
-    // }
-    
-    // generateThoughtIfReady(), generateAudio() REMOVED
-    
-    private func performAPIVerification() async {
-        do {
-            let isValid = try await apiManager.verifyAPIKey()
-            if !isValid {
-                await MainActor.run {
-                    // MODIFIED: Update error handling to use apiManager.errorMessage and showError
-                    apiManager.errorMessage = "API Key is invalid or verification failed."
-                    showError = true
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(Color(.systemBlue))
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text(subtitle)
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(.secondary)
                 }
-                print("EditScreenView: API Key is invalid or verification failed.")
+                
+                Spacer()
+                
+                Text("\(Int(value * 100))%")
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .frame(width: 50, alignment: .trailing)
             }
-        } catch {
-            await MainActor.run {
-                // MODIFIED: Update error handling to use apiManager.errorMessage and showError
-                apiManager.errorMessage = "Could not verify API key: \\(error.localizedDescription)"
-                showError = true
+            
+            HStack(spacing: 12) {
+                Text("\(Int(range.lowerBound * 100))%")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                
+                Slider(value: $value, in: range, step: step)
+                    .accentColor(Color(.systemBlue))
+                
+                Text("\(Int(range.upperBound * 100))%")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
             }
-            print("EditScreenView: Could not verify API key: \\(error.localizedDescription)")
         }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+}
+
+struct ToggleCard: View {
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+    let icon: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(Color(.systemOrange))
+                .frame(width: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text(subtitle)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .scaleEffect(0.9)
+        }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+}
+
+struct VoiceCloneCard: View {
+    @Binding var showVoiceCloneSheet: Bool
+    
+    var body: some View {
+        Button(action: {
+            showVoiceCloneSheet = true
+        }) {
+            HStack(spacing: 16) {
+                Image(systemName: "person.wave.2.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(Color(.systemPurple))
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Manage Voice Clone")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Record, test, or replace your AI voice")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -2111,84 +2789,194 @@ struct CreateAccountView: View {
     @State private var activationCode = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @FocusState private var focusedField: CreateAccountField?
+    
+    enum CreateAccountField: Hashable {
+        case username, email, password, activationCode
+    }
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("Create Account")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding(.bottom, 30)
-
-                TextField("Username", text: $username)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                TextField("Email", text: $email)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-
-                TextField("Activation Code", text: $activationCode)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
+        GeometryReader { geometry in
+            ZStack {
+                // Premium gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBlue).opacity(0.8),
+                        Color(.systemPurple).opacity(0.6),
+                        Color(.systemIndigo).opacity(0.9)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
-
-                Button(action: createAccount) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text("Create Account")
-                            .fontWeight(.semibold)
+                ScrollView {
+                    VStack(spacing: 32) {
+                        Spacer(minLength: 40)
+                        
+                        // Header Section
+                        VStack(spacing: 20) {
+                            // App Icon
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 100, height: 100)
+                                    .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+                                
+                                Image(systemName: "waveform.circle.fill")
+                                    .font(.system(size: 50, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [.white, .white.opacity(0.8)]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Join Voice Memos AI")
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                                
+                                Text("Create your account to start generating intelligent voice memos")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Form Section
+                        VStack(spacing: 20) {
+                            // Username Field
+                            AuthTextField(
+                                title: "Username",
+                                text: $username,
+                                icon: "person.fill",
+                                keyboardType: .default,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .username)
+                            
+                            // Email Field
+                            AuthTextField(
+                                title: "Email",
+                                text: $email,
+                                icon: "envelope.fill",
+                                keyboardType: .emailAddress,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .email)
+                            
+                            // Password Field
+                            AuthTextField(
+                                title: "Password",
+                                text: $password,
+                                icon: "lock.fill",
+                                keyboardType: .default,
+                                isSecure: true
+                            )
+                            .focused($focusedField, equals: .password)
+                            
+                            // Activation Code Field
+                            AuthTextField(
+                                title: "Activation Code",
+                                text: $activationCode,
+                                icon: "key.fill",
+                                keyboardType: .default,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .activationCode)
+                            
+                            // Error Message
+                            if let error = errorMessage {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                    Text(error)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.red)
+                                }
+                                .padding(16)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Action Buttons
+                        VStack(spacing: 16) {
+                            // Create Account Button
+                            Button(action: createAccount) {
+                                HStack(spacing: 12) {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Text("Create Account")
+                                            .font(.system(size: 18, weight: .semibold))
+                                        
+                                        Image(systemName: "arrow.right.circle.fill")
+                                            .font(.system(size: 18))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(.ultraThickMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            .disabled(isLoading || username.isEmpty || email.isEmpty || password.isEmpty || activationCode.isEmpty)
+                            .opacity((isLoading || username.isEmpty || email.isEmpty || password.isEmpty || activationCode.isEmpty) ? 0.6 : 1.0)
+                            
+                            // Login Link
+                            Button(action: onGoToLogin) {
+                                HStack(spacing: 8) {
+                                    Text("Already have an account?")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    
+                                    Text("Sign In")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        Spacer(minLength: 40)
                     }
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                                                             .disabled(isLoading)
-
-                Button("Already have an account? Login") {
-                    onGoToLogin()
-                }
-                .font(.footnote)
-
-                Spacer()
             }
-            .padding()
-            .navigationBarHidden(true) // Hide navigation bar for a cleaner look
+        }
+        .navigationBarHidden(true)
+        .onTapGesture {
+            focusedField = nil
         }
     }
 
     func createAccount() {
         isLoading = true
         errorMessage = nil
+        focusedField = nil
+        
         Task {
             let success = await authManager.createAccount(
                 username: username,
                 email: email,
                 password: password,
                 activationCode: activationCode
-
             )
             await MainActor.run {
                 isLoading = false
                 if success {
                     onAccountCreated()
                 } else {
-                    errorMessage = authManager.errorMessage ?? "Failed to create account." // FIX: Use errorMessage
+                    errorMessage = authManager.errorMessage ?? "Failed to create account."
                 }
             }
         }
@@ -2200,63 +2988,164 @@ struct LoginView: View {
     let onLoggedIn: () -> Void
     let onGoToCreateAccount: () -> Void
 
-    @State private var emailOrUsername = "" // Can be email or username
+    @State private var emailOrUsername = ""
     @State private var password = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @FocusState private var focusedField: LoginField?
+    
+    enum LoginField: Hashable {
+        case emailOrUsername, password
+    }
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("Login")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding(.bottom, 30)
-
-                TextField("Username or Email", text: $emailOrUsername)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
+        GeometryReader { geometry in
+            ZStack {
+                // Premium gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemGreen).opacity(0.8),
+                        Color(.systemBlue).opacity(0.7),
+                        Color(.systemTeal).opacity(0.9)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
-
-                Button(action: login) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text("Login")
-                            .fontWeight(.semibold)
+                ScrollView {
+                    VStack(spacing: 32) {
+                        Spacer(minLength: 60)
+                        
+                        // Header Section
+                        VStack(spacing: 20) {
+                            // App Icon
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 100, height: 100)
+                                    .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+                                
+                                Image(systemName: "waveform.circle.fill")
+                                    .font(.system(size: 50, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [.white, .white.opacity(0.8)]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Welcome Back")
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                
+                                Text("Sign in to access your voice memos")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Form Section
+                        VStack(spacing: 20) {
+                            // Email/Username Field
+                            AuthTextField(
+                                title: "Username or Email",
+                                text: $emailOrUsername,
+                                icon: "person.circle.fill",
+                                keyboardType: .emailAddress,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .emailOrUsername)
+                            
+                            // Password Field
+                            AuthTextField(
+                                title: "Password",
+                                text: $password,
+                                icon: "lock.fill",
+                                keyboardType: .default,
+                                isSecure: true
+                            )
+                            .focused($focusedField, equals: .password)
+                            
+                            // Error Message
+                            if let error = errorMessage {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                    Text(error)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.red)
+                                }
+                                .padding(16)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Action Buttons
+                        VStack(spacing: 16) {
+                            // Sign In Button
+                            Button(action: login) {
+                                HStack(spacing: 12) {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Text("Sign In")
+                                            .font(.system(size: 18, weight: .semibold))
+                                        
+                                        Image(systemName: "arrow.right.circle.fill")
+                                            .font(.system(size: 18))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(.ultraThickMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            .disabled(isLoading || emailOrUsername.isEmpty || password.isEmpty)
+                            .opacity((isLoading || emailOrUsername.isEmpty || password.isEmpty) ? 0.6 : 1.0)
+                            
+                            // Create Account Link
+                            Button(action: onGoToCreateAccount) {
+                                HStack(spacing: 8) {
+                                    Text("Don't have an account?")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    
+                                    Text("Create One")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        Spacer(minLength: 60)
                     }
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.green)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .disabled(isLoading)
-
-                Button("Don't have an account? Create One") {
-                    onGoToCreateAccount()
-                }
-                .font(.footnote)
-
-                Spacer()
             }
-            .padding()
-            .navigationBarHidden(true)
+        }
+        .navigationBarHidden(true)
+        .onTapGesture {
+            focusedField = nil
         }
     }
 
     func login() {
         isLoading = true
         errorMessage = nil
+        focusedField = nil
+        
         Task {
             let success = await authManager.login(emailOrUsername: emailOrUsername, password: password)
             await MainActor.run {
@@ -2264,9 +3153,54 @@ struct LoginView: View {
                 if success {
                     onLoggedIn()
                 } else {
-                    errorMessage = authManager.errorMessage ?? "Login failed." // FIX: Use errorMessage
+                    errorMessage = authManager.errorMessage ?? "Login failed."
                 }
             }
+        }
+    }
+}
+
+// MARK: - Custom Auth Text Field Component
+
+struct AuthTextField: View {
+    let title: String
+    @Binding var text: String
+    let icon: String
+    let keyboardType: UIKeyboardType
+    let isSecure: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(width: 20)
+                
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            
+            Group {
+                if isSecure {
+                    SecureField("", text: $text)
+                } else {
+                    TextField("", text: $text)
+                        .keyboardType(keyboardType)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+            }
+            .font(.system(size: 17, weight: .medium))
+            .foregroundColor(.white)
+            .padding(16)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.white.opacity(0.2), lineWidth: 1)
+            )
         }
     }
 }
