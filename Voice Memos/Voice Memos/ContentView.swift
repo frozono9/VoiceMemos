@@ -5,7 +5,8 @@ import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGen
 
 // MARK: - Global Enums and Structs (Accessible throughout the file)
 
-enum Language: String, CaseIterable, Identifiable {
+// MODIFIED: Add Codable conformance
+enum Language: String, Codable, CaseIterable, Identifiable {
     case english = "english"
     case spanish = "spanish"
     // Add other languages as needed
@@ -22,6 +23,88 @@ enum Language: String, CaseIterable, Identifiable {
         }
     }
 }
+
+// MODIFIED: UserSettings struct to explicitly implement Codable and add memberwise initializer
+struct UserSettings: Codable, Equatable {
+    var language: Language
+    var voiceSimilarity: Double
+    var stability: Double
+    var addBackgroundSound: Bool
+    var backgroundVolume: Double
+    var voiceIds: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case language
+        case voiceSimilarity = "voice_similarity"
+        case stability
+        case addBackgroundSound = "add_background_sound"
+        case backgroundVolume = "background_volume"
+        case voiceIds = "voice_ids"
+    }
+
+    // Explicit Decodable
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        language = try container.decode(Language.self, forKey: .language)
+        voiceSimilarity = try container.decode(Double.self, forKey: .voiceSimilarity)
+        stability = try container.decode(Double.self, forKey: .stability)
+        addBackgroundSound = try container.decode(Bool.self, forKey: .addBackgroundSound)
+        backgroundVolume = try container.decode(Double.self, forKey: .backgroundVolume)
+        voiceIds = try container.decodeIfPresent([String].self, forKey: .voiceIds)
+    }
+
+    // Explicit Encodable
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(language, forKey: .language)
+        try container.encode(voiceSimilarity, forKey: .voiceSimilarity)
+        try container.encode(stability, forKey: .stability)
+        try container.encode(addBackgroundSound, forKey: .addBackgroundSound)
+        try container.encode(backgroundVolume, forKey: .backgroundVolume)
+        try container.encodeIfPresent(voiceIds, forKey: .voiceIds)
+    }
+    
+    // Memberwise initializer (needed because providing init(from:) removes the synthesized one)
+    init(language: Language, voiceSimilarity: Double, stability: Double, addBackgroundSound: Bool, backgroundVolume: Double, voiceIds: [String]? = nil) {
+        self.language = language
+        self.voiceSimilarity = voiceSimilarity
+        self.stability = stability
+        self.addBackgroundSound = addBackgroundSound
+        self.backgroundVolume = backgroundVolume
+        self.voiceIds = voiceIds
+    }
+
+    static var defaultSettings: UserSettings {
+        UserSettings(
+            language: .english,
+            voiceSimilarity: 0.85,
+            stability: 0.70,
+            addBackgroundSound: true,
+            backgroundVolume: 0.5,
+            voiceIds: []
+        )
+    }
+}
+
+// Payload for updating settings
+struct UserSettingsPayload: Codable {
+    let language: String
+    let voiceSimilarity: Double
+    let stability: Double
+    let addBackgroundSound: Bool // NEW
+    let backgroundVolume: Double   // NEW
+    // voice_ids are not directly updated via this payload, managed by voice cloning flow
+
+    enum CodingKeys: String, CodingKey {
+        case language
+        case voiceSimilarity = "voice_similarity"
+        case stability
+        case addBackgroundSound = "add_background_sound" // NEW
+        case backgroundVolume = "background_volume"     // NEW
+    }
+}
+
+// MARK: - ContentView
 
 struct ContentView: View {
     @State private var selectedButton: String = ""
@@ -105,7 +188,7 @@ struct ContentView: View {
                     }
                 )
             case .home: // Handle home screen
-                if authManager.authToken != nil { // Only show home if logged in
+                if authManager.isAuthenticated { // Use isAuthenticated instead of authToken check
                     NavigationView { // Added NavigationView
                         HomeScreenView(
                             authManager: authManager, // Pass authManager to HomeScreenView
@@ -168,10 +251,10 @@ struct ContentView: View {
         }
         .onAppear {
             // AuthManager's init() already loads the token from Keychain
-            if authManager.authToken != nil {
+            if authManager.isAuthenticated {
                 currentScreen = .home
             } else {
-                currentScreen = .login // Show login if no token
+                currentScreen = .login // Show login if not authenticated
             }
         }
     }
@@ -235,7 +318,7 @@ struct ContentView: View {
 
         Task {
             do {
-                print("ContentView: Starting audio generation with topic: \\(selectedButton), value: \\(inputText)")
+                print("ContentView: Starting audio generation with topic: \(selectedButton), value: \(inputText)")
                 let audioData = try await apiManager.generateAudioWithClonedVoice(
                     topic: selectedButton,
                     value: inputText
@@ -270,7 +353,7 @@ struct ContentView: View {
                     // Optionally, update the placeholder to show an error state
                     let errorRecording = RecordingData(
                         id: pendingRecordingID, // Use the same ID
-                        title: "Error: \\(selectedButton) - \\(inputText.prefix(20))...",
+                        title: "Error: \(selectedButton) - \(inputText.prefix(20))...",
                         date: formattedDate(yesterday), // Use yesterday's date
                         duration: "Error"
                     )
@@ -790,7 +873,7 @@ struct VoiceMemosView: View {
                 do {
                     try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
                 } catch {
-                    print("VoiceMemosView: Failed to override output port to speaker: \\(error.localizedDescription)")
+                    print("VoiceMemosView: Failed to override output port to speaker: \(error.localizedDescription)")
                 }
                 audioPlayer?.play()
                 isPlaying = true
@@ -874,13 +957,13 @@ class VoiceAPIManager: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var generatedAudioURL: URL? = nil
     @Published var connectionStatus: ConnectionStatus = .unknown // Added this line
-    @Published var language: Language = .english // Default language
-
-    // Added settings properties
-    @Published var stability: Double = 0.7
-    @Published var similarityBoost: Double = 0.85
-    @Published var addBackground: Bool = true
-    @Published var backgroundVolume: Double = 0.5
+    
+    // Settings properties - ensure these match UserSettings
+    @Published var language: Language = UserSettings.defaultSettings.language 
+    @Published var stability: Double = UserSettings.defaultSettings.stability
+    @Published var similarityBoost: Double = UserSettings.defaultSettings.voiceSimilarity // Name consistency
+    @Published var addBackground: Bool = UserSettings.defaultSettings.addBackgroundSound // NEW
+    @Published var backgroundVolume: Double = UserSettings.defaultSettings.backgroundVolume // NEW
 
     let baseURL = "https://voicememos-production.up.railway.app" // MODIFIED: Use Railway deployment URL
     private var fallbackURLs: [String] = [] // Removed fallback to 0.0.0.0 for now
@@ -896,11 +979,8 @@ class VoiceAPIManager: ObservableObject {
     // Add an initializer to accept AuthManager
     init(authManager: AuthManager) { // NEW - authManager is now required
         self.authManager = authManager
-        // Attempt to load token when VoiceAPIManager is initialized
-        // This ensures that if a token exists, it\'s available for immediate use.
-        // However, AuthManager itself handles loading from Keychain on its init.
-        // So, direct loading here might be redundant if AuthManager is always fresh.
-        // If using @StateObject for AuthManager at a higher level, it should be up-to-date.
+        // Initialize settings from current user if available
+        loadSettingsFromAuth()
     }
 
     // MARK: - Public API Methods
@@ -1004,8 +1084,12 @@ class VoiceAPIManager: ObservableObject {
             print("VoiceAPIManager: No auth token found for /generate-thought. Proceeding without.")
         }
         
+        // MODIFIED: Declare data outside the do-catch to make it accessible in the catch block for ThoughtResponse decoding
+        var responseData: Data?
+        
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            responseData = data // Assign data here
             guard let httpResponse = response as? HTTPURLResponse else {
                 print("Invalid HTTP response for /generate-thought")
                 throw NetworkError.invalidResponse
@@ -1024,9 +1108,9 @@ class VoiceAPIManager: ObservableObject {
                     print("VoiceAPIManager: Server error from /generate-thought: \(errorMessage)")
                     throw NetworkError.serverError(message: errorMessage)
                 } else {
-                     let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
-                     print("VoiceAPIManager: Server error (non-JSON) from /generate-thought: \(responseBody)")
-                     throw NetworkError.serverError(message: "Server error: \(responseBody)")
+                     let responseBodyString = String(data: data, encoding: .utf8) ?? "No response body"
+                     print("VoiceAPIManager: Server error (non-JSON) from /generate-thought: \(responseBodyString)")
+                     throw NetworkError.serverError(message: "Server error: \(responseBodyString)")
                 }
             }
             
@@ -1036,8 +1120,9 @@ class VoiceAPIManager: ObservableObject {
                 print("VoiceAPIManager: Successfully received thought: \(thoughtResponse.thought)")
                 return thoughtResponse.thought
             } catch {
-                let responseBody = String(data: data, encoding: .utf8) ?? "No response body for decoding error"
-                print("VoiceAPIManager: Failed to decode ThoughtResponse: \(error.localizedDescription). Body: \(responseBody)")
+                // Use responseData here, which is in scope
+                let responseBodyForDecodingError = String(data: responseData ?? Data(), encoding: .utf8) ?? "No response body for decoding error"
+                print("VoiceAPIManager: Failed to decode ThoughtResponse: \(error.localizedDescription). Body: \(responseBodyForDecodingError)")
                 throw NetworkError.decodingError
             }
 
@@ -1165,6 +1250,108 @@ class VoiceAPIManager: ObservableObject {
             throw NetworkError.unknown(message: error.localizedDescription)
         }
     }
+    
+    // MARK: - User Settings Management
+
+    func loadSettingsFromAuth() {
+        // Populate UI from authenticated user's settings
+        DispatchQueue.main.async {
+            if let userSettings = self.authManager.currentUser?.settings {
+                self.language = userSettings.language
+                self.stability = userSettings.stability
+                self.similarityBoost = userSettings.voiceSimilarity
+                self.addBackground = userSettings.addBackgroundSound
+                self.backgroundVolume = userSettings.backgroundVolume
+            }
+        }
+    }
+
+    func updateUserSettings() async {
+        guard let token = authManager.authToken else {
+            await MainActor.run {
+                self.errorMessage = "Authentication token not found. Please log in."
+            }
+            return
+        }
+
+        guard let url = URL(string: "\(baseURL)/update-settings") else {
+            await MainActor.run {
+                self.errorMessage = "Invalid URL for updating settings."
+            }
+            return
+        }
+
+        await MainActor.run {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Assuming UserSettingsPayload is defined and matches backend expectations
+        // Also assuming Language enum has a String rawValue
+        let payload = UserSettingsPayload(
+            language: self.language.rawValue,
+            voiceSimilarity: self.similarityBoost, // Corrected label and order
+            stability: self.stability,             // Corrected order
+            addBackgroundSound: self.addBackground, // Corrected label
+            backgroundVolume: self.backgroundVolume  // Corrected label
+        )
+
+        do {
+            let jsonData = try JSONEncoder().encode(payload)
+            request.httpBody = jsonData
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await MainActor.run {
+                    self.errorMessage = "Invalid response from server."
+                }
+                return
+            }
+
+            if httpResponse.statusCode == 200 {
+                print("VoiceAPIManager: User settings updated successfully.")
+                // Optionally, update AuthManager's currentUser.settings here or re-fetch
+                // For now, we assume the local VoiceAPIManager state is the source of truth after update.
+                // To reflect changes in AuthManager immediately:
+                let updatedSettings = UserSettings(
+                    language: self.language,
+                    voiceSimilarity: self.similarityBoost, // Corrected order
+                    stability: self.stability,             // Corrected order
+                    addBackgroundSound: self.addBackground,
+                    backgroundVolume: self.backgroundVolume,
+                    voiceIds: self.authManager.currentUser?.settings.voiceIds // Preserve existing voice IDs
+                )
+                self.authManager.updateCurrentUserSettings(updatedSettings) // Uncommented and should now work
+
+
+            } else if httpResponse.statusCode == 401 {
+                await MainActor.run {
+                    self.errorMessage = "Unauthorized. Please log in again."
+                    // Consider calling authManager.logout() or similar
+                }
+            } else {
+                var errorMsg = "Failed to update settings. Status: \(httpResponse.statusCode)"
+                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    errorMsg = errorResponse.message ?? errorResponse.error ?? errorMsg
+                }
+                await MainActor.run {
+                    self.errorMessage = errorMsg
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Error updating settings: \(error.localizedDescription)"
+            }
+        }
+        await MainActor.run {
+            self.isLoading = false
+        }
+    }
 }
 
 // Add ErrorResponse struct for decoding server error messages if they are JSON
@@ -1181,6 +1368,21 @@ struct TokenResponse: Decodable {
 // ADDED: Define ThoughtResponse
 struct ThoughtResponse: Decodable {
     let thought: String
+}
+
+// ADDED: User struct for decoding /me endpoint response
+struct User: Codable, Identifiable {
+    let id: Int // Assuming id is an Int from the backend
+    let username: String
+    let email: String
+    var settings: UserSettings
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case username
+        case email
+        case settings // This should match the JSON key from your /me endpoint
+    }
 }
 
 
@@ -1362,58 +1564,72 @@ struct EditScreenView: View {
     @ObservedObject var apiManager: VoiceAPIManager
     let onBackTapped: () -> Void
     
-    @State private var showError = false
-    @State private var errorMessage = ""
+    @State private var showError = false // This might be redundant now if apiManager.errorMessage drives the alert
+    // @State private var errorMessage = "" // This will now come from apiManager.errorMessage
     @State private var showVoiceCloneSheet = false
+    @State private var showSaveConfirmation = false
+    @State private var saveStatusMessage = ""
 
-    var body: some View {
-        Form {
-            // Simple back button with no extra padding or styling
-            Button(action: onBackTapped) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
-            }
+    private var settingsFormView: some View {
+        let baseForm = Form {
             languagePreferenceSection
             advancedSettingsSection
-            
+            voiceCloneSection
+
             Section {
                 Button("Save Settings") {
-                    // Placeholder: Implement save action
-                    print("Save Settings button tapped. Implement save action here.")
-                    // Example: Task { await apiManager.saveUserSettings() }
+                    Task {
+                        await apiManager.updateUserSettings()
+                        saveStatusMessage = "Settings saved successfully."
+                        showSaveConfirmation = true
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .center) // Center the button
-                .foregroundColor(.blue) // Give it a distinct color
+                .frame(maxWidth: .infinity)
+                .padding()
             }
-            
             Section {
-                Button("Voice Clone Settings") {
-                    showVoiceCloneSheet = true
+                if apiManager.isLoading {
+                    ProgressView()
                 }
             }
         }
-        // .navigationTitle("Settings")
-        // .toolbar {
-        //     ToolbarItem(placement: .navigationBarLeading) {
-        //         Button("Back") {
-        //             onBackTapped()
-        //         }
-        //     }
-        // }
-        .sheet(isPresented: $showVoiceCloneSheet) {
-            VoiceCloneSheet(apiManager: apiManager)
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") { }
-        } message: { Text(errorMessage) }
-        .onAppear {
-            Task {
-                await performAPIVerification()
-                // Fetch user settings when the view appears, if not already handled
-                // await apiManager.fetchUserSettings() // Assuming this is called elsewhere or as needed
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Back") {
+                    self.onBackTapped()
+                }
             }
+        }
+
+        return baseForm
+            .onAppear {
+                let apiManager = self.apiManager // Define local constant
+                apiManager.loadSettingsFromAuth()
+                apiManager.errorMessage = nil // Use local constant
+            }
+            .sheet(isPresented: $showVoiceCloneSheet) {
+                VoiceCloneSheet(apiManager: self.apiManager)
+            }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { self.apiManager.errorMessage != nil },
+                set: { _ in self.apiManager.errorMessage = nil }
+            )) {
+                Button("OK") { self.apiManager.errorMessage = nil }
+            } message: {
+                Text(self.apiManager.errorMessage ?? "An error occurred")
+            }
+            .alert("Settings", isPresented: self.$showSaveConfirmation) {
+                Button("OK") { }
+            } message: {
+                Text(self.saveStatusMessage)
+            }
+    }
+
+    var body: some View {
+        NavigationView { // Added NavigationView for title and toolbar
+            settingsFormView
         }
     }
     
@@ -1442,71 +1658,41 @@ struct EditScreenView: View {
     
     private var advancedSettingsSection: some View {
         Section(header: Text("Advanced Voice Settings")) {
-            VStack(spacing: 15) {
-                // Similarity slider - BIND TO apiManager
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("Voice similarity:")
-                        Spacer()
-                        Text(String(format: "%.2f", apiManager.similarityBoost))
-                            .fontWeight(.bold)
-                    }
-                    Slider(value: $apiManager.similarityBoost, in: 0.5...1.0, step: 0.05)
-                        .tint(.blue)
-                }
-                
-                // Stability slider - BIND TO apiManager
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("Stability:")
-                        Spacer()
-                        Text(String(format: "%.2f", apiManager.stability))
-                            .fontWeight(.bold)
-                    }
-                    Slider(value: $apiManager.stability, in: 0.3...1.0, step: 0.05)
-                        .tint(.blue)
-                }
-                
-                Text("👍 Increase similarity for a sound more like your voice. Increase stability for more consistent speech.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Divider()
-                
-                // Background sound settings - BIND TO apiManager
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("Add background sound (fan.mp3)", isOn: $apiManager.addBackground)
-                        .fontWeight(.medium)
-                    
-                    if apiManager.addBackground {
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text("Background volume:")
-                                Spacer()
-                                Text(String(format: "%.2f", apiManager.backgroundVolume))
-                                    .fontWeight(.bold)
-                            }
-                            Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05)
-                                .tint(.blue)
-                        }
-                        
-                        Text("🔊 Adjust background sound volume. 0 = very low, 1 = normal volume.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
+            VStack(alignment: .leading) {
+                Text("Stability: \(apiManager.stability, specifier: "%.2f")")
+                Slider(value: $apiManager.stability, in: 0.0...1.0, step: 0.05)
             }
-            .padding(.vertical, 5)
+            VStack(alignment: .leading) {
+                Text("Similarity Boost: \(apiManager.similarityBoost, specifier: "%.2f")")
+                Slider(value: $apiManager.similarityBoost, in: 0.0...1.0, step: 0.05)
+            }
+            // The following settings are now part of UserSettings and backend
+            Toggle("Add Background Sound", isOn: $apiManager.addBackground)
+            VStack(alignment: .leading) {
+                Text("Background Volume: \(apiManager.backgroundVolume, specifier: "%.2f")")
+                Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05)
+                    .disabled(!apiManager.addBackground) // Disable if addBackground is false
+            }
+            .opacity(apiManager.addBackground ? 1.0 : 0.5) // Visually indicate disabled state
+        }
+    }
+    
+    // Added section for Voice Cloning
+    private var voiceCloneSection: some View {
+        Section(header: Text("Voice Clone Management")) {
+            Button("Manage Voice Clone") {
+                showVoiceCloneSheet = true
+            }
         }
     }
     
     // generateButton, loadingView, resultView REMOVED
     // canGenerate, formatTime REMOVED
     
-    private func showErrorAlert(_ message: String) {
-        errorMessage = message
-        showError = true
-    }
+    // private func showErrorAlert(_ message: String) { // REMOVED - using apiManager.errorMessage now
+    //     errorMessage = message
+    //     showError = true
+    // }
     
     // generateThoughtIfReady(), generateAudio() REMOVED
     
@@ -1515,15 +1701,19 @@ struct EditScreenView: View {
             let isValid = try await apiManager.verifyAPIKey()
             if !isValid {
                 await MainActor.run {
-                    showErrorAlert("API Key is invalid or verification failed.")
+                    // MODIFIED: Update error handling to use apiManager.errorMessage and showError
+                    apiManager.errorMessage = "API Key is invalid or verification failed."
+                    showError = true
                 }
                 print("EditScreenView: API Key is invalid or verification failed.")
             }
         } catch {
             await MainActor.run {
-                showErrorAlert("Could not verify API key: \(error.localizedDescription)") // Corrected interpolation
+                // MODIFIED: Update error handling to use apiManager.errorMessage and showError
+                apiManager.errorMessage = "Could not verify API key: \\(error.localizedDescription)"
+                showError = true
             }
-            print("EditScreenView: Could not verify API key: \(error.localizedDescription)") // Corrected interpolation
+            print("EditScreenView: Could not verify API key: \\(error.localizedDescription)")
         }
     }
 }
@@ -1915,7 +2105,7 @@ struct CreateAccountView: View {
                 .background(Color.blue)
                 .foregroundColor(.white)
                 .cornerRadius(10)
-                .disabled(isLoading)
+                                                             .disabled(isLoading)
 
                 Button("Already have an account? Login") {
                     onGoToLogin()
@@ -1938,6 +2128,7 @@ struct CreateAccountView: View {
                 email: email,
                 password: password,
                 activationCode: activationCode
+
             )
             await MainActor.run {
                 isLoading = false
@@ -2038,6 +2229,7 @@ class AuthManager: ObservableObject {
     @Published var isLoading: Bool = false // For UI updates during network calls
     @Published var showError: Bool = false // ADDED: For displaying errors in the UI
     @Published var errorMessage: String? = nil // ADDED: Stores the error message
+    @Published var currentUser: User? = nil // ADDED: To store current user data including settings
 
     private let baseURL = "https://voicememos-production.up.railway.app" // MODIFIED: Use Railway production URL
     // --- TEMPORARY DIAGNOSTIC for connection issues ---
@@ -2166,6 +2358,8 @@ class AuthManager: ObservableObject {
                         self.errorMessage = nil // Clear error on success
                         self.showError = false
                     }
+                    // After successful login, fetch user details which include settings
+                    await fetchAndUpdateCurrentUser() 
                     return true
                 } catch {
                     print("Detailed decoding error in login: \(error)")
@@ -2196,7 +2390,68 @@ class AuthManager: ObservableObject {
         self.authToken = nil
         self.isAuthenticated = false
         deleteTokenFromKeychain() // Remove persisted token
+        DispatchQueue.main.async {
+            self.currentUser = nil // Clear current user data on logout
+        }
     }
+
+    // MARK: - User Data Management (New)
+    func fetchAndUpdateCurrentUser() async {
+        guard let token = self.authToken else {
+            print("AuthManager: No auth token available to fetch user data.")
+            return
+        }
+        guard let url = URL(string: "\(baseURL)/me") else {
+            print("AuthManager: Invalid URL for /me endpoint.")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("AuthManager: Invalid response when fetching user data.")
+                return
+            }
+            
+            if httpResponse.statusCode == 200 {
+                let fetchedUser = try JSONDecoder().decode(User.self, from: data)
+                DispatchQueue.main.async {
+                    self.currentUser = fetchedUser
+                    print("AuthManager: Successfully fetched and updated current user.")
+                }
+            } else if httpResponse.statusCode == 401 {
+                // Only log out if the token is actually invalid (401)
+                print("AuthManager: Token is invalid (401). Logging out.")
+                DispatchQueue.main.async {
+                    self.logout()
+                }
+            } else {
+                // For other errors, just log but don't logout
+                print("AuthManager: Failed to fetch user data. Status: \(httpResponse.statusCode)")
+            }
+        } catch {
+            // Don't logout on network errors, just log them
+            print("AuthManager: Error fetching or decoding user data: \(error.localizedDescription)")
+        }
+    }
+
+    func updateCurrentUserSettings(_ settings: UserSettings) {
+        DispatchQueue.main.async {
+            if self.currentUser != nil {
+                self.currentUser!.settings = settings
+                print("AuthManager: Local currentUser settings updated.")
+                // Note: This only updates the local copy. The settings are saved to the backend
+                // by VoiceAPIManager.updateUserSettings(), which should be the source of truth for saving.
+            } else {
+                print("AuthManager: Attempted to update settings for a nil currentUser.")
+            }
+        }
+    }
+
 
     // MARK: - Keychain Management
     func saveTokenToKeychain(token: String) {
@@ -2236,7 +2491,12 @@ class AuthManager: ObservableObject {
             if let retrievedData = dataTypeRef as? Data,
                let token = String(data: retrievedData, encoding: .utf8) {
                 self.authToken = token
+                self.isAuthenticated = true // Set authenticated state when token is loaded
                 print("Token loaded from keychain.")
+                // Fetch user data to ensure the token is still valid
+                Task {
+                    await fetchAndUpdateCurrentUser()
+                }
             } else {
                  print("Failed to decode token from keychain.")
             }
@@ -2265,13 +2525,17 @@ class AuthManager: ObservableObject {
 
 // MARK: - Voice Clone Sheet
 struct VoiceCloneSheet: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.presentationMode) var presentationMode // Use @Environment to dismiss
+
     @ObservedObject var apiManager: VoiceAPIManager
+    // Removed isPresented binding as it's managed by the .sheet modifier
+
     @State private var isRecording = false
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
     @State private var isPlaying = false
     @State private var audioPlayer: AVAudioPlayer?
+    @State private var avDelegate: AVDelegate? // ADDED: Delegate to manage playback finishing
     @State private var statusMessage: String?
     @State private var existingCloneId: String?
     @State private var isUploading = false
@@ -2297,7 +2561,7 @@ struct VoiceCloneSheet: View {
                         .cornerRadius(8)
 
                         Button("Close") {
-                            presentationMode.wrappedValue.dismiss()
+                            presentationMode.wrappedValue.dismiss() // Use presentationMode
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -2328,20 +2592,21 @@ struct VoiceCloneSheet: View {
 
                     if recordingURL != nil {
                         Button(action: {
-                            if isPlaying {
-                                audioPlayer?.stop()
-                                isPlaying = false
+                            if self.isPlaying {
+                                self.audioPlayer?.stop() // Stop the player
+                                self.isPlaying = false   // Manually update UI state
                             } else {
-                                playRecording()
+                                self.playRecording()
                             }
                         }) {
                             Text(isPlaying ? "Stop Playback" : "Play Recording")
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.gray)
+                                .background(isPlaying ? Color.red : Color.blue)
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }
+                        .padding(.top)
                     }
 
                     Button(action: generateClone) {
@@ -2369,7 +2634,7 @@ struct VoiceCloneSheet: View {
             .padding()
             .navigationTitle("Voice Clone")
             .navigationBarItems(trailing: Button("Close") {
-                presentationMode.wrappedValue.dismiss()
+                presentationMode.wrappedValue.dismiss() // Use presentationMode
             })
             .onAppear {
                 Task { await fetchExistingClone() }
@@ -2426,13 +2691,49 @@ struct VoiceCloneSheet: View {
     }
 
     private func playRecording() {
-        guard let url = recordingURL else { return }
+        guard let url = recordingURL else {
+            statusMessage = "No recording available to play."
+            return
+        }
+
+        // Stop existing player if any and reset state
+        if audioPlayer?.isPlaying == true {
+            audioPlayer?.stop()
+        }
+        self.isPlaying = false
+        self.audioPlayer?.delegate = nil // Clear old delegate
+        self.audioPlayer = nil
+        self.avDelegate = nil
+
         do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.play()
-            isPlaying = true
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+
+            let newPlayer = try AVAudioPlayer(contentsOf: url)
+            self.audioPlayer = newPlayer
+
+            let newDelegate = AVDelegate {
+                DispatchQueue.main.async {
+                    isPlaying = false
+                }
+            }
+            self.avDelegate = newDelegate
+            newPlayer.delegate = newDelegate
+
+            if newPlayer.prepareToPlay() {
+                newPlayer.play()
+                self.isPlaying = true
+                self.statusMessage = nil // Clear status on successful play
+            } else {
+                self.statusMessage = "Failed to prepare audio for playback."
+                self.isPlaying = false
+            }
         } catch {
-            statusMessage = "Playback failed"
+            self.statusMessage = "Playback failed: \(error.localizedDescription)"
+            self.isPlaying = false
+            // Ensure cleanup on error
+            self.audioPlayer = nil
+            self.avDelegate = nil
         }
     }
 
@@ -2458,7 +2759,7 @@ struct VoiceCloneSheet: View {
                 body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
                 request.httpBody = body
 
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 if let json = try? JSONDecoder().decode([String: String].self, from: data),
                    let cloneId = json["voice_clone_id"] {
                     existingCloneId = cloneId
@@ -2497,12 +2798,15 @@ struct VoiceCloneSheet: View {
 
 // AVAudioPlayerDelegate helper
 class AVDelegate: NSObject, AVAudioPlayerDelegate {
-    @Binding var isPlaying: Bool
-    init(isPlaying: Binding<Bool>) {
-        _isPlaying = isPlaying
+    var onFinishPlaying: (() -> Void)? // Replaced @Binding var isPlaying
+
+    init(onFinishPlaying: (() -> Void)?) { // Initializer now takes a closure
+        self.onFinishPlaying = onFinishPlaying
+        super.init() // Added call to super.init()
     }
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        isPlaying = false
+        onFinishPlaying?() // Call the closure instead of setting isPlaying directly
     }
 }
 
