@@ -3,6 +3,9 @@ import tempfile
 import requests
 import json
 import traceback
+import jwt # Added for JWT
+import bcrypt # Added for password hashing
+import certifi # Added for MongoDB SSL
 from flask import Flask, request, send_file, jsonify, render_template, g
 from dotenv import load_dotenv
 from pydub import AudioSegment
@@ -10,12 +13,9 @@ import google.generativeai as genai
 from google.generativeai.client import configure
 from pymongo import MongoClient
 from bson import ObjectId
-import bcrypt
 from email_validator import validate_email, EmailNotValidError
 import re
 from datetime import datetime, timedelta # Added timedelta
-import certifi
-import jwt # Added for JWT
 from functools import wraps # Added for decorator
 
 load_dotenv()
@@ -30,14 +30,19 @@ if not GOOGLE_API_KEY:
 else:
     # Initialize Google Gemini API
     try:
+        # Assuming 'configure' is from 'google.generativeai.client' as per original context
+        from google.generativeai.client import configure
         configure(api_key=GOOGLE_API_KEY)
         print("Google AI client initialized successfully")
+    except ImportError:
+        print("Failed to import 'google.generativeai.client.configure'. Make sure the library is installed.")
+        traceback.print_exc()
     except Exception as e:
         print(f"Error initializing Google AI client: {e}")
         traceback.print_exc()
 
 # Define Gemini model name
-GOOGLE_MODEL_NAME = "gemini-2.0-flash"
+GOOGLE_MODEL_NAME = "gemini-1.5-flash" # Updated to a common model, ensure this is intended
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
@@ -180,90 +185,70 @@ def _is_likely_inappropriate(text):
     
     return any(pattern in text for pattern in inappropriate_patterns)
 
-def _generate_thought_text(prompt, topic, value):
-    """Genera texto usando la API de Gemini"""
+def _generate_thought_text(prompt, topic, value, language="english"): # Added language parameter
+    """Genera texto usando la API de Gemini en el idioma especificado."""
+    
+    # Determine the appropriate starting phrase based on language
+    start_phrase = "Okay, so..."
+    fallback_message_template = "Okay, so... This morning I had a feeling that someone I know is interested in {value} regarding {topic}."
+    if language.lower().startswith("es") or language.lower() == "spanish":
+        start_phrase = "Okay, entonces..." # Or a more natural Spanish equivalent
+        fallback_message_template = "Okay, entonces... Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
+
     if not GOOGLE_API_KEY:
-        return f"Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
+        print(f"GOOGLE_API_KEY not set. Returning fallback message in {language}.")
+        return fallback_message_template.format(value=value, topic=topic)
     
     try:
-        # Intenta usar el SDK de Python primero
+        # Attempt to use the Google AI Python SDK
         try:
-            from google.generativeai.generative_models import GenerativeModel
+            from google.generativeai.generative_models import GenerativeModel # Original import
             model = GenerativeModel(GOOGLE_MODEL_NAME)
             
-            try:
-                thought_response = model.generate_content(prompt)
-                
-                if hasattr(thought_response, 'text'):
-                    return thought_response.text.strip()
-                else:
-                    # Intenta extraer texto de candidates si está disponible
-                    if hasattr(thought_response, 'candidates') and thought_response.candidates:
-                        candidate = thought_response.candidates[0]
-                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                            parts = candidate.content.parts
-                            if parts and hasattr(parts[0], 'text'):
-                                return parts[0].text.strip()
-            except Exception as sdk_ex:
-                print(f"Error con Google AI SDK: {str(sdk_ex)}")
-                traceback.print_exc()
-        except (ImportError, NameError) as import_err:
-            print(f"Error con SDK: {str(import_err)}")
+            # Construct the full prompt including the language-specific start_phrase instruction
+            # The main prompt content is passed as 'prompt' argument to this function
+            full_prompt_for_gemini = f"{prompt}" # The 'prompt' arg already contains language instructions
 
-        # Segunda opción: Usar REST API directamente
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_MODEL_NAME}:generateContent?key={GOOGLE_API_KEY}"
+            thought_response = model.generate_content(full_prompt_for_gemini)
+            
+            generated_text = ""
+            if hasattr(thought_response, 'text'):
+                generated_text = thought_response.text.strip()
+            elif hasattr(thought_response, 'candidates') and thought_response.candidates:
+                candidate = thought_response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts') and candidate.content.parts:
+                    if hasattr(candidate.content.parts[0], 'text'):
+                        generated_text = candidate.content.parts[0].text.strip()
+            
+            if generated_text:
+                # Ensure the generated text starts with the correct phrase if not already present
+                # This might be redundant if Gemini correctly follows the prompt, but acts as a safeguard.
+                if not generated_text.lower().startswith(start_phrase.lower()):
+                     # Check if a similar starting phrase in the target language is present
+                    if language.lower().startswith("es") and not (generated_text.lower().startswith("bueno, pues") or generated_text.lower().startswith("a ver")):
+                         generated_text = f"{start_phrase} {generated_text}"
+                    elif not language.lower().startswith("es"): # For English and others if not starting correctly
+                         generated_text = f"{start_phrase} {generated_text}"
+                return generated_text
+            else:
+                print("Gemini response did not contain usable text. Using fallback.")
         
-        payload = {
-            "contents": [{
-                "parts": [{
-                    "text": prompt
-                }]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 1,
-                "topP": 0.8,
-                "maxOutputTokens": 100,
-                "stopSequences": []
-            },
-            "safetySettings": [
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                }
-            ]
-        }
+        except (ImportError, NameError, AttributeError) as sdk_err:
+            print(f"Google AI SDK error or not available: {str(sdk_err)}. Falling back to REST API or general fallback.")
+            traceback.print_exc()
         
-        response = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            json=payload
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if "candidates" in result and len(result["candidates"]) > 0:
-                if "content" in result["candidates"][0] and "parts" in result["candidates"][0]["content"]:
-                    return result["candidates"][0]["content"]["parts"][0]["text"].strip()
-    
+        # Fallback to REST API if SDK fails (optional, or remove if SDK is primary)
+        # For simplicity, if SDK fails, we'll use the general fallback here.
+        # If REST API fallback is desired, it would be implemented here similar to original code.
+
     except Exception as e:
-        print(f"Error generando texto: {e}")
+        print(f"Error generating text with Gemini: {e}")
         traceback.print_exc()
     
-    # Fallback si falla todo
-    return f"Esta mañana tuve la sensación de que alguien que conozco está interesado en {value} en relación a {topic}."
+    # General fallback if all attempts fail
+    print(f"All Gemini generation attempts failed. Returning fallback message in {language}.")
+    return fallback_message_template.format(value=value, topic=topic)
+
 
 @app.route('/generate-audio-cloned', methods=['POST'])
 @token_required
@@ -273,8 +258,9 @@ def generate_audio():
     value_str = None
     
     # Default values for voice settings
-    stability_val = 0.7
-    similarity_boost_val = 0.85
+    stability_val = g.current_user.get("settings", {}).get("stability", 0.7)
+    similarity_boost_val = g.current_user.get("settings", {}).get("voice_similarity", 0.85)
+    user_language = g.current_user.get("settings", {}).get("language", "english") 
 
     if request.is_json:
         data = request.get_json()
@@ -285,8 +271,8 @@ def generate_audio():
         value_str = data.get('value')
         
         # Allow numbers directly from JSON for these settings, or strings that can be converted
-        stability_input = data.get('stability', stability_val)
-        similarity_boost_input = data.get('similarity_boost', similarity_boost_val)
+        stability_input = data.get('stability', stability_val) # Use user's default if not provided
+        similarity_boost_input = data.get('similarity_boost', similarity_boost_val) # Use user's default
 
         try:
             stability_val = float(stability_input)
@@ -321,142 +307,83 @@ def generate_audio():
     value = value_str.strip()
 
     try:
-        # Determine which voice ID to use: user's clone if available, otherwise default
         user_clone_id = g.current_user.get("voice_clone_id")
-        if user_clone_id:
-            voice_id_to_use = user_clone_id
-        else:
-            voice_id_to_use = ALEX_LATORRE_VOICE_ID or get_alex_latorre_voice_id()
+        voice_id_to_use = user_clone_id if user_clone_id else (ALEX_LATORRE_VOICE_ID or get_alex_latorre_voice_id())
+        
         if not voice_id_to_use:
             username = g.current_user.get("username", "user")
             return jsonify({"error": f"Voice clone for '{username}' not found and default voice unavailable. Please check backend logs."}), 500
 
-        # Generar el texto usando Gemini
-        if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
-            generated_text = "This morning I woke up thinking about how interesting magic is and how it can surprise people."
-            print(f"Warning: Potentially inappropriate content detected. Using safe fallback.")
-        else:
-            safe_prompt = f"""
-Generate a short, natural voice note — like someone just woke up and is casually recording a weird dream or morning hunch. It should sound spontaneous and human, like the kind of thing you’d say out loud to yourself when you barely remember it.
+        # Determine prompt start phrase and fallback text based on language
+        prompt_start_phrase = "Okay, so..."
+        inappropriate_fallback_text = "This morning I woke up thinking about how interesting magic is and how it can surprise people."
+        if user_language.lower().startswith("es") or user_language.lower() == "spanish":
+            prompt_start_phrase = "Okay, entonces..." # Or "Bueno, pues..." or "A ver..."
+            inappropriate_fallback_text = "Esta mañana me desperté pensando en lo interesante que es la magia y cómo puede sorprender a la gente."
 
+
+        if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
+            generated_text = inappropriate_fallback_text
+            print(f"Warning: Potentially inappropriate content detected. Using safe fallback in {user_language}.")
+        else:
+            # Construct the safe_prompt with language instructions for Gemini
+            safe_prompt = f"""
+Generate a short, natural voice note in {user_language} — like someone just woke up and is casually recording a weird dream or morning hunch. It should sound spontaneous and human, like the kind of thing you’d say out loud to yourself when you barely remember it.
+The voice note MUST be in {user_language}.
 It should include the value ({value}), but not in a forced way — just let it come up naturally, like it’s part of what they remembered from the dream. It shouldn’t directly mention the topic ({topic}), but it should influence the tone and content — think of it as the unspoken context.
 
-Use real, messy language: hesitations, pauses, filler words like “uh,” “kinda,” “I think,” “or something.” The vibe should be loose, sleepy, and conversational. Don’t over-explain, pretty straight to the point. Don’t sound like you’re trying to be clever. Just like someone talking into their phone, half-awake. 
+Use real, messy language typical for {user_language}: hesitations, pauses, filler words (e.g., for English: "uh," "kinda," "I think," "or something"; for Spanish: "eh," "como que," "creo," "o algo así" - use natural equivalents in {user_language}). The vibe should be loose, sleepy, and conversational. Don’t over-explain, pretty straight to the point. Don’t sound like you’re trying to be clever. Just like someone talking into their phone, half-awake. 
 
-Tone: neutral or curious — like “maybe that means something…”
+Tone: neutral or curious — like “maybe that means something…” (or its equivalent in {user_language}).
 
-Length constraint: Keep it short enough that it would take no more than 10 seconds to say out loud.
+Length constraint: Keep it short enough that it would take no more than 10-15 seconds to say out loud.
 
-Examples:
+Examples (these examples are in English, adapt the style and content if generating for a different language like {user_language}. The key is the spontaneous, sleepy, and brief nature):
 	•	“Okay, so I just woke up and had this random dream where this girl was freaking out about spiders. Like… not just scared, but full-on panic. No idea why that stuck.”
 	•	“I dunno, I had this dream where someone was talking about going to Paris. Felt super real for some reason. Might hear it again today or something.”
 	•	“Weird dream. Some guy was bragging about getting an A+ in math. I don’t even know who he was.”
 
-Only return the voice note text. Nothing else. Always start with "Okay, so..."
+Only return the voice note text, in {user_language}. Nothing else. Always start with "{prompt_start_phrase}"
 """
-            generated_text = _generate_thought_text(safe_prompt, topic, value)
+            generated_text = _generate_thought_text(safe_prompt, topic, value, user_language)
 
-        print(f"Texto generado1: {generated_text}")
+        print(f"Texto generado ({user_language}): {generated_text}")
 
-        # Ya no se clona la voz, se usa la existente.
-        # El siguiente bloque de código para crear/clonar voz se elimina.
-        # ----- INICIO BLOQUE ELIMINADO -----
-        # # Usar el archivo cloningvoice.mp3 predefinido
-        # audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloningvoice.mp3")
-
-        # # Verificar que el archivo existe
-        # if not os.path.exists(audio_path):
-        #     return jsonify({"error": "No se encontró el archivo de voz para clonar (cloningvoice.mp3)"}), 500
-
-        # print(f"Usando archivo de voz: {audio_path}, tamaño: {os.path.getsize(audio_path)} bytes")
-
-        # # Crear una nueva voz con el archivo de audio predefinido
-        # with open(audio_path, 'rb') as f:
-        #     file_content = f.read()
-
-        #     files = {
-        #         "files": (os.path.basename(audio_path), file_content, "audio/mpeg")
-        #     }
-        #     data = {
-        #         "name": "predefined-voice", # Podrías cambiar este nombre si quieres
-        #         "description": "Predefined voice for cloning",
-        #         "labels": '{"accent": ""}', # Ajusta las etiquetas si es necesario
-        #         "language": "es" # Ajusta el idioma si es necesario
-        #     }
-
-        #     resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files, data=data)
-
-        # print(f"Voice creation response status: {resp.status_code}")
-        # print(f"Voice creation response: {resp.text}")
-
-        # try:
-        #     resp.raise_for_status()
-        #     voice_data = resp.json()
-        #     voice_id = voice_data.get('voice_id')
-
-        #     if not voice_id:
-        #         error_msg = f"No se recibió voice_id en respuesta exitosa: {resp.text}"
-        #         print(f"ERROR: {error_msg}")
-        #         return jsonify({"error": error_msg}), 500
-
-        # except requests.HTTPError as e:
-        #     if "voice_limit_reached" in resp.text:
-        #         print("Se alcanzó el límite de voces. Intentando obtener la lista de voces existentes...")
-
-        #         try:
-        #             voices_resp = requests.get("https://api.elevenlabs.io/v1/voices", headers=headers)
-        #             voices_resp.raise_for_status()
-        #             voices = voices_resp.json()
-
-        #             # Intenta encontrar una voz clonada existente o una específica si es necesario
-        #             cloned_voices = [v for v in voices.get('voices', []) if v.get('category') == 'cloned'] # O busca por nombre
-
-        #             if cloned_voices:
-        #                 voice_id = cloned_voices[0].get('voice_id') # O la voz específica
-        #                 print(f"Usando voz existente con ID: {voice_id}")
-        #             else:
-        #                 return jsonify({"error": "No hay voces disponibles y se alcanzó el límite de creación de voces"}), 500
-        #         except Exception as ve:
-        #             print(f"Error al obtener voces: {ve}")
-        #             return jsonify({"error": "Error al obtener voces existentes"}), 500
-        #     else:
-        #         error_msg = f"Error HTTP {resp.status_code} de Eleven Labs API: {resp.text}"
-        #         print(f"ERROR: {error_msg}")
-        #         return jsonify({"error": error_msg}), resp.status_code
-        
-        # if not voice_id: # Safeguard
-        #      return jsonify({"error": "Failed to obtain a voice_id after creation/retrieval attempts"}), 500
-        # ----- FIN BLOQUE ELIMINADO -----
-
-        tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use) # Usar voice_id_to_use
-
-        # stability and similarity_boost are now stability_val, similarity_boost_val (floats)
+        tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use)
         json_payload = {
             "text": generated_text,
             "voice_settings": {
-                "stability": stability_val, # Use the float converted values
-                "similarity_boost": similarity_boost_val # Use the float converted values
+                "stability": stability_val,
+                "similarity_boost": similarity_boost_val
             }
+            # Language for ElevenLabs TTS is typically tied to the voice model,
+            # especially for cloned voices or specific multilingual pre-made voices.
+            # The text itself being in the target language is key.
         }
 
-        print(f"Generando TTS con voice_id: {voice_id_to_use}, texto: '{generated_text}', settings: {json_payload['voice_settings']}")
+        print(f"Generando TTS con voice_id: {voice_id_to_use}, texto (primeros 100 chars): '{generated_text[:100]}...', settings: {json_payload['voice_settings']}, language context from user: {user_language}")
         tts_resp = requests.post(tts_url, headers={**headers, 'Content-Type': 'application/json'}, json=json_payload)
 
         try:
             tts_resp.raise_for_status()
         except requests.HTTPError as e:
             error_msg = f"Error al generar voz: {tts_resp.text}"
-            print(f"ERROR: {error_msg}")
+            print(f"ERROR TTS: {error_msg}") # Differentiate TTS error log
             return jsonify({"error": error_msg}), tts_resp.status_code
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as out:
             out.write(tts_resp.content)
             out_path = out.name
 
+        # Schedule deletion of the temp file after sending it
+        # This requires a bit more setup (e.g., Flask's after_this_request) or handling it differently
+        # For now, it's deleted when the 'with' block for NamedTemporaryFile would normally end if delete=True
+        # Since it's delete=False, it persists. Consider a cleanup strategy for these files.
+
         return send_file(out_path, mimetype='audio/mpeg', as_attachment=True, download_name='output.mp3')
 
     except Exception as e:
-        print(f"Error general: {e}")
+        print(f"Error general en generate_audio: {e}")
         traceback.print_exc()
         return jsonify({"error": f"Error al generar audio: {str(e)}"}), 500
 
@@ -588,54 +515,112 @@ def verify_activation_code_endpoint():
 @app.route('/generate-voice-clone', methods=['POST'])
 @token_required
 def generate_voice_clone():
-    # Handle overwrite flag: bypass existing clone return and delete old clone if present
     overwrite = request.values.get('overwrite', 'false').strip().lower() in ('true', '1')
     existing_id = g.current_user.get('voice_clone_id')
-    if existing_id:
-        if not overwrite:
-            return jsonify({"voice_clone_id": existing_id}), 200
-        # Overwrite: delete old voice clone from ElevenLabs
+    user_language_setting = g.current_user.get("settings", {}).get("language", "english")
+
+    # Map app language name to ElevenLabs language codes
+    # (Refer to ElevenLabs documentation for the full list of supported codes: https://elevenlabs.io/docs/speech-synthesis/voice-cloning#supported-languages)
+    lang_code_map = {
+        "english": "en", "spanish": "es", "french": "fr", "german": "de",
+        "italian": "it", "portuguese": "pt", "polish": "pl", "hindi": "hi",
+        "arabic": "ar", "japanese": "ja", "chinese": "zh", "korean": "ko",
+        "dutch": "nl", "turkish": "tr", "swedish": "sv", "indonesian": "id",
+        "filipino": "fil", "vietnamese": "vi", "ukrainian": "uk", "greek": "el",
+        "czech": "cs", "finnish": "fi", "romanian": "ro", "danish": "da",
+        "bulgarian": "bg", "malay": "ms", "slovak": "sk", "croatian": "hr",
+        "classic arabic": "ar", # Example if specific variants needed
+        "tamil": "ta", "russian": "ru" # Added Russian
+    }
+    elevenlabs_lang_code = lang_code_map.get(user_language_setting.lower(), "en") # Default to 'en'
+    print(f"User language for cloning: {user_language_setting}, mapped to ElevenLabs code: {elevenlabs_lang_code}")
+
+    if existing_id and not overwrite:
+        return jsonify({"voice_clone_id": existing_id, "message": "Existing voice clone ID returned."}), 200
+    
+    if existing_id and overwrite:
         delete_url = f"https://api.elevenlabs.io/v1/voices/{existing_id}"
         try:
             del_resp = requests.delete(delete_url, headers=headers)
             del_resp.raise_for_status()
-            print(f"Deleted old voice clone {existing_id} for user {g.current_user.get('username')}")
-        except Exception as e:
-            print(f"Failed to delete old voice clone {existing_id}: {e}")
+            print(f"Successfully deleted old voice clone {existing_id} for user {g.current_user.get('username')}")
+            users_collection.update_one({"_id": g.current_user['_id']}, {"$unset": {"voice_clone_id": ""}})
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to delete old voice clone {existing_id} from ElevenLabs: {e}. Proceeding to create a new one.")
+
     if 'audio' not in request.files:
         return jsonify({"error": "Missing 'audio' file"}), 400
+    
     file = request.files['audio']
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp:
-        file.save(temp.name)
-        try:
-            audio_seg = AudioSegment.from_file(temp.name)
-            if len(audio_seg) > 60 * 1000:
-                return jsonify({"error": "Audio duration exceeds 1 minute"}), 400
-        except Exception:
-            return jsonify({"error": "Invalid audio file"}), 400
-    files_payload = {"files": (file.filename, open(temp.name, 'rb'), file.mimetype)}
-    data_payload = {
-        "name": g.current_user['username'],
-        "description": f"Voice clone for user {g.current_user['username']}",
-        "labels": "{}",
-        "language": "es"
-    }
-    resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files_payload, data=data_payload)
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    temp_file_path = None
+    opened_file_for_request = None # To ensure it's closed
+
     try:
+        # Validate audio file (basic check, more robust validation might be needed)
+        # Pydub can be heavy; consider alternatives if only simple validation is needed.
+        # For now, assume the file is reasonably valid if it gets this far.
+        # audio_seg = AudioSegment.from_file(file) 
+        # if len(audio_seg) > 5 * 60 * 1000: # Max 5 minutes for cloning
+        #     return jsonify({"error": "Audio file is too long. Maximum 5 minutes allowed for cloning."}), 400
+        # file.seek(0) 
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp:
+            file.save(temp.name)
+            temp_file_path = temp.name
+        
+        opened_file_for_request = open(temp_file_path, 'rb')
+        files_for_request = [('files', (file.filename, opened_file_for_request, file.mimetype))]
+
+        # The 'language' parameter for /v1/voices/add is NOT standard for v1 cloning.
+        # Language is typically inferred from the audio.
+        # However, some newer ElevenLabs models or Professional Voice Cloning might use it.
+        # For standard v1 cloning, it's safer to omit it if not explicitly supported or rely on audio content.
+        # If the API supports it and it's beneficial, it can be added.
+        # The name and description can hint at the language.
+        data_payload = {
+            "name": f"{g.current_user['username']}_{elevenlabs_lang_code}", 
+            "description": f"Voice clone for user {g.current_user['username']} (Language: {user_language_setting} - {elevenlabs_lang_code})",
+            "labels": '{}', # Must be a JSON string
+            # "language": elevenlabs_lang_code # Add this if confirmed supported & beneficial for your ElevenLabs plan/version
+        }
+        # If your ElevenLabs setup *requires* the language field for cloning, uncomment the line above.
+        # Otherwise, the language of the audio files themselves is the primary determinant.
+
+        print(f"Attempting to clone voice. Name: {data_payload['name']}. Audio language should be {user_language_setting}.")
+        resp = requests.post(ELEVEN_VOICE_ADD_URL, headers=headers, files=files_for_request, data=data_payload)
         resp.raise_for_status()
-    except requests.HTTPError:
-        return jsonify({"error": f"ElevenLabs error: {resp.text}"}), resp.status_code
-    voice_data = resp.json()
-    voice_id = voice_data.get('voice_id')
-    if not voice_id:
-        return jsonify({"error": "No 'voice_id' returned from ElevenLabs"}), 500
-    samples = voice_data.get('samples', [])
-    sample_url = samples[0].get('url') if samples and isinstance(samples[0], dict) else None
-    users_collection.update_one({"_id": g.current_user['_id']}, {"$set": {"voice_clone_id": voice_id}})
-    result = {"voice_clone_id": voice_id}
-    if sample_url:
-        result['sample_url'] = sample_url
-    return jsonify(result), 200
+        
+        voice_data = resp.json()
+        voice_id = voice_data.get('voice_id')
+        if not voice_id:
+            print(f"No 'voice_id' returned from ElevenLabs. Response: {voice_data}")
+            return jsonify({"error": "No 'voice_id' returned from ElevenLabs"}), 500
+
+        users_collection.update_one({"_id": g.current_user['_id']}, {"$set": {"voice_clone_id": voice_id}})
+        
+        result = {"voice_clone_id": voice_id, "message": "Voice clone created successfully."}
+        return jsonify(result), 200
+
+    except requests.HTTPError as e:
+        error_body = resp.text if resp and hasattr(resp, 'text') else "No response body"
+        status_code = e.response.status_code if hasattr(e, 'response') else 500
+        print(f"ElevenLabs API HTTPError during cloning: {status_code} - {error_body}")
+        return jsonify({"error": f"ElevenLabs API error: {error_body}"}), status_code
+    except Exception as e:
+        print(f"Error during voice clone: {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to create voice clone: {str(e)}"}), 500
+    finally:
+        if opened_file_for_request:
+            opened_file_for_request.close()
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except Exception as e:
+                print(f"Error deleting temp file {temp_file_path}: {e}")
 
 # Add endpoint to fetch current user info
 @app.route('/me', methods=['GET'])

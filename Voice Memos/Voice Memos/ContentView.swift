@@ -2114,7 +2114,7 @@ struct EditScreenView: View {
                         
                         // Language Preference Section
                         SettingsSection(
-                            title: "Language Preference",
+                            title: "Voice generation language",
                             icon: "globe.americas.fill",
                             iconColor: Color(.systemGreen)
                         ) {
