@@ -127,7 +127,7 @@ struct ContentView: View {
                                 currentScreen = .login // Navigate to login screen
                             }
                         )
-                        .navigationTitle("Voice Memos AI") // Added title
+                        Spacer()
                         }
                 } else {
                     // If not logged in, redirect to login or create account
@@ -1379,6 +1379,16 @@ struct EditScreenView: View {
             advancedSettingsSection
             
             Section {
+                Button("Save Settings") {
+                    // Placeholder: Implement save action
+                    print("Save Settings button tapped. Implement save action here.")
+                    // Example: Task { await apiManager.saveUserSettings() }
+                }
+                .frame(maxWidth: .infinity, alignment: .center) // Center the button
+                .foregroundColor(.blue) // Give it a distinct color
+            }
+            
+            Section {
                 Button("Voice Clone Settings") {
                     showVoiceCloneSheet = true
                 }
@@ -1431,21 +1441,17 @@ struct EditScreenView: View {
     }
     
     private var advancedSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Advanced settings to improve results:")
-                .font(.headline)
-                .foregroundColor(.blue)
-            
+        Section(header: Text("Advanced Voice Settings")) {
             VStack(spacing: 15) {
                 // Similarity slider - BIND TO apiManager
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text("Voice similarity:")
                         Spacer()
-                        Text(String(format: "%.2f", apiManager.similarityBoost)) // Use apiManager
+                        Text(String(format: "%.2f", apiManager.similarityBoost))
                             .fontWeight(.bold)
                     }
-                    Slider(value: $apiManager.similarityBoost, in: 0.5...1.0, step: 0.05) // Use apiManager
+                    Slider(value: $apiManager.similarityBoost, in: 0.5...1.0, step: 0.05)
                         .tint(.blue)
                 }
                 
@@ -1454,10 +1460,10 @@ struct EditScreenView: View {
                     HStack {
                         Text("Stability:")
                         Spacer()
-                        Text(String(format: "%.2f", apiManager.stability)) // Use apiManager
+                        Text(String(format: "%.2f", apiManager.stability))
                             .fontWeight(.bold)
                     }
-                    Slider(value: $apiManager.stability, in: 0.3...1.0, step: 0.05) // Use apiManager
+                    Slider(value: $apiManager.stability, in: 0.3...1.0, step: 0.05)
                         .tint(.blue)
                 }
                 
@@ -1469,18 +1475,18 @@ struct EditScreenView: View {
                 
                 // Background sound settings - BIND TO apiManager
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle("Add background sound (fan.mp3)", isOn: $apiManager.addBackground) // Use apiManager
+                    Toggle("Add background sound (fan.mp3)", isOn: $apiManager.addBackground)
                         .fontWeight(.medium)
                     
-                    if apiManager.addBackground { // Use apiManager
+                    if apiManager.addBackground {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Text("Background volume:")
                                 Spacer()
-                                Text(String(format: "%.2f", apiManager.backgroundVolume)) // Use apiManager
+                                Text(String(format: "%.2f", apiManager.backgroundVolume))
                                     .fontWeight(.bold)
                             }
-                            Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05) // Use apiManager
+                            Slider(value: $apiManager.backgroundVolume, in: 0.0...1.0, step: 0.05)
                                 .tint(.blue)
                         }
                         
@@ -1490,10 +1496,8 @@ struct EditScreenView: View {
                     }
                 }
             }
+            .padding(.vertical, 5)
         }
-        .padding()
-        .background(Color.blue.opacity(0.05))
-        .cornerRadius(10)
     }
     
     // generateButton, loadingView, resultView REMOVED
