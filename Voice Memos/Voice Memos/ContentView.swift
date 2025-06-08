@@ -1702,14 +1702,45 @@ class VoiceAPIManager: ObservableObject {
     // MARK: - User Settings Management
 
     func loadSettingsFromAuth() {
-        // Populate UI from authenticated user's settings
+        print("VoiceAPIManager: loadSettingsFromAuth() called")
+        
+        // First, populate UI from current user's settings if available
         DispatchQueue.main.async {
             if let userSettings = self.authManager.currentUser?.settings {
+                print("VoiceAPIManager: Found current user settings - Language: \(userSettings.language), Stability: \(userSettings.stability), Similarity: \(userSettings.voiceSimilarity)")
+                print("VoiceAPIManager: Current UI values BEFORE update - Language: \(self.language), Stability: \(self.stability), Similarity: \(self.similarityBoost)")
+                
                 self.language = userSettings.language
                 self.stability = userSettings.stability
                 self.similarityBoost = userSettings.voiceSimilarity
                 self.addBackground = userSettings.addBackgroundSound
                 self.backgroundVolume = userSettings.backgroundVolume
+                
+                print("VoiceAPIManager: Current UI values AFTER update - Language: \(self.language), Stability: \(self.stability), Similarity: \(self.similarityBoost)")
+                print("VoiceAPIManager: Loaded settings from current user data")
+            } else {
+                print("VoiceAPIManager: No current user data available, fetching fresh data...")
+                print("VoiceAPIManager: AuthManager current user: \(String(describing: self.authManager.currentUser))")
+                
+                // If no current user data, try to fetch it
+                Task {
+                    await self.authManager.fetchAndUpdateCurrentUser()
+                    // After fetching, load the settings again
+                    DispatchQueue.main.async {
+                        if let userSettings = self.authManager.currentUser?.settings {
+                            print("VoiceAPIManager: Found settings after fresh fetch - Language: \(userSettings.language), Stability: \(userSettings.stability), Similarity: \(userSettings.voiceSimilarity)")
+                            
+                            self.language = userSettings.language
+                            self.stability = userSettings.stability
+                            self.similarityBoost = userSettings.voiceSimilarity
+                            self.addBackground = userSettings.addBackgroundSound
+                            self.backgroundVolume = userSettings.backgroundVolume
+                            print("VoiceAPIManager: Loaded settings after fresh fetch")
+                        } else {
+                            print("VoiceAPIManager: Still no current user data after fetch!")
+                        }
+                    }
+                }
             }
         }
     }
@@ -1820,16 +1851,20 @@ struct ThoughtResponse: Decodable {
 
 // ADDED: User struct for decoding /me endpoint response
 struct User: Codable, Identifiable {
-    let id: Int // Assuming id is an Int from the backend
+    let id: String // Changed from Int to String to match backend
     let username: String
     let email: String
     var settings: UserSettings
+    let voiceCloneId: String? // Added to match backend response
+    let voiceIds: [String]? // Added to match backend response
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case id = "user_id" // Map user_id from backend to id in Swift
         case username
         case email
-        case settings // This should match the JSON key from your /me endpoint
+        case settings
+        case voiceCloneId = "voice_clone_id" // Map voice_clone_id from backend
+        case voiceIds = "voice_ids" // Map voice_ids from backend
     }
 }
 
@@ -2224,8 +2259,18 @@ struct EditScreenView: View {
             }
         }
         .onAppear {
-            apiManager.loadSettingsFromAuth()
+            // Always fetch fresh user data when settings screen appears
+            Task {
+                await apiManager.authManager.fetchAndUpdateCurrentUser()
+                apiManager.loadSettingsFromAuth()
+            }
             apiManager.errorMessage = nil
+        }
+        .onReceive(apiManager.authManager.$currentUser) { user in
+            // React to changes in current user data
+            if user != nil {
+                apiManager.loadSettingsFromAuth()
+            }
         }
         .sheet(isPresented: $showVoiceCloneSheet) {
             VoiceCloneSheet(apiManager: apiManager)
@@ -3383,6 +3428,7 @@ class AuthManager: ObservableObject {
     }
 
     // MARK: - User Data Management (New)
+    // MODIFIED: Made public so VoiceAPIManager can call it
     func fetchAndUpdateCurrentUser() async {
         guard let token = self.authToken else {
             print("AuthManager: No auth token available to fetch user data.")
@@ -3404,11 +3450,26 @@ class AuthManager: ObservableObject {
                 return
             }
             
+            print("AuthManager: /me endpoint response status: \(httpResponse.statusCode)")
+            
             if httpResponse.statusCode == 200 {
-                let fetchedUser = try JSONDecoder().decode(User.self, from: data)
-                DispatchQueue.main.async {
-                    self.currentUser = fetchedUser
-                    print("AuthManager: Successfully fetched and updated current user.")
+                // Add debugging to see the raw response
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("AuthManager: /me endpoint raw response: \(responseString)")
+                }
+                
+                do {
+                    let fetchedUser = try JSONDecoder().decode(User.self, from: data)
+                    DispatchQueue.main.async {
+                        self.currentUser = fetchedUser
+                        print("AuthManager: Successfully fetched and updated current user: \(fetchedUser.username)")
+                        print("AuthManager: User settings - Language: \(fetchedUser.settings.language), Stability: \(fetchedUser.settings.stability), Similarity: \(fetchedUser.settings.voiceSimilarity)")
+                    }
+                } catch {
+                    print("AuthManager: Failed to decode User from /me response: \(error)")
+                    if let decodingError = error as? DecodingError {
+                        print("AuthManager: Decoding error details: \(decodingError)")
+                    }
                 }
             } else if httpResponse.statusCode == 401 {
                 // Only log out if the token is actually invalid (401)
@@ -3419,6 +3480,9 @@ class AuthManager: ObservableObject {
             } else {
                 // For other errors, just log but don't logout
                 print("AuthManager: Failed to fetch user data. Status: \(httpResponse.statusCode)")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("AuthManager: Error response body: \(responseString)")
+                }
             }
         } catch {
             // Don't logout on network errors, just log them
