@@ -3,6 +3,26 @@ import AVFoundation
 import UniformTypeIdentifiers
 import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGenerator is in UIKit
 
+// MARK: - Global Enums and Structs (Accessible throughout the file)
+
+enum Language: String, CaseIterable, Identifiable {
+    case english = "english"
+    case spanish = "spanish"
+    // Add other languages as needed
+
+    var id: String { self.rawValue }
+
+    var displayName: String {
+        switch self {
+        case .english:
+            return "English"
+        case .spanish:
+            return "Español"
+        // Add other display names
+        }
+    }
+}
+
 struct ContentView: View {
     @State private var selectedButton: String = ""
     @State private var inputText: String = ""
@@ -826,6 +846,7 @@ class VoiceAPIManager: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var generatedAudioURL: URL? = nil
     @Published var connectionStatus: ConnectionStatus = .unknown // Added this line
+    @Published var language: Language = .english // Default language
 
     // Added settings properties
     @Published var stability: Double = 0.7
@@ -1310,82 +1331,47 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
 
 // MARK: - Edit Screen View
 struct EditScreenView: View {
-    // Removed selectedButton and inputText
     @ObservedObject var apiManager: VoiceAPIManager
-    let onBackTapped: () -> Void // MODIFIED: No longer takes RecordingData?
+    let onBackTapped: () -> Void
     
-    // Removed @State variables related to text input, generation, loading, and results
-    @State private var showError = false // KEEP for API verification
-    @State private var errorMessage = "" // KEEP for API verification
-    @State private var showVoiceCloneSheet = false // Show voice clone popup
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var showVoiceCloneSheet = false
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Navigation Header
-                    HStack {
-                        Button(action: { onBackTapped() }) { // MODIFIED: Call onBackTapped without params
-                            HStack(spacing: 5) {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(.blue)
-                                Text("Back")
-                                    .font(.system(size: 17))
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        Text("Settings") // MODIFIED: Title changed
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                        
-                        Button("Done") {
-                            onBackTapped() // MODIFIED: Call onBackTapped without params
-                        }
-                        .font(.system(size: 17))
-                        .foregroundColor(.blue)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    
-                    connectionStatusView // KEEP
-                    
-                    // headerView, infoView, textInputSection, generateButton, loadingView, resultView REMOVED
-                    
-                    advancedSettingsSection // KEEP (will bind to apiManager)
-                    
-                    // Button to show voice clone sheet
-                    Button(action: { showVoiceCloneSheet = true }) {
-                        Text("Clone Voice")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                    }
+        Form {
+            connectionStatusView
+            languagePreferenceSection
+            advancedSettingsSection
+            
+            Section {
+                Button("Voice Clone Settings") {
+                    showVoiceCloneSheet = true
                 }
-                .padding()
-            }
-            // Present sheet for recording and cloning voice
-            .sheet(isPresented: $showVoiceCloneSheet) {
-                VoiceCloneSheet(apiManager: apiManager)
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    onBackTapped()
+                }
+            }
+        }
+        .sheet(isPresented: $showVoiceCloneSheet) {
+            VoiceCloneSheet(apiManager: apiManager)
+        }
         .alert("Error", isPresented: $showError) {
             Button("OK") { }
-        } message: {
-            Text(errorMessage)
+        } message: { Text(errorMessage) }
+        .onAppear {
+            Task {
+                await performAPIVerification()
+                // Fetch user settings when the view appears, if not already handled
+                // await apiManager.fetchUserSettings() // Assuming this is called elsewhere or as needed
+            }
         }
     }
-    
-    // createGeneratedRecording(), formattedDate(), estimateDuration() REMOVED
     
     // MARK: - View Components
     private var connectionStatusView: some View {
@@ -1411,9 +1397,28 @@ struct EditScreenView: View {
         .padding(.vertical, 5)
     }
     
-    // headerView REMOVED
-    // infoView REMOVED
-    // textInputSection REMOVED
+    private var languagePreferenceSection: some View {
+        Section(header: Text("Language Preference")) {
+            Menu {
+                ForEach(Language.allCases) { lang in
+                    Button(action: {
+                        apiManager.language = lang
+                        // Optionally, trigger a save operation here if needed immediately
+                        // Task { await apiManager.updateUserSettings(...) }
+                    }) {
+                        Text(lang.displayName)
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("Language")
+                    Spacer()
+                    Text(apiManager.language.displayName)
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+    }
     
     private var advancedSettingsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -1507,8 +1512,6 @@ struct EditScreenView: View {
             print("EditScreenView: Could not verify API key: \(error.localizedDescription)") // Corrected interpolation
         }
     }
-    
-    // verifyAPI() REMOVED
 }
 
 // MARK: - Audio Player View
