@@ -157,6 +157,22 @@ struct UserSettingsPayload: Codable {
     }
 }
 
+// MARK: - AppScreen Enum
+
+enum AppScreen {
+    case buttonSelection
+    case textInput
+    case cardInput
+    case numberInput
+    case starSignInput
+    case voiceMemos
+    case editScreen
+    case home // Added home screen case
+    case tutorial // Added tutorial screen case
+    case createAccount // Added for user registration
+    case login // Added for user login
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
@@ -179,17 +195,6 @@ struct ContentView: View {
         // Pass the same AuthManager instance to VoiceAPIManager
         _apiManager = StateObject(wrappedValue: VoiceAPIManager(authManager: authManagerInstance))
     }
-
-    enum AppScreen {
-        case buttonSelection
-        case textInput
-        case voiceMemos
-        case editScreen
-        case home // Added home screen case
-        case tutorial // Added tutorial screen case
-        case createAccount // Added for user registration
-        case login // Added for user login
-    }
     
     var body: some View {
         ZStack { // Added ZStack for potential global loading/error overlay
@@ -208,14 +213,26 @@ struct ContentView: View {
                     currentScreen = .createAccount
                 })
             case .buttonSelection:
-                ButtonSelectionView(selectedButton: $selectedButton, onButtonSelected: {
-                    currentScreen = .textInput
+                ButtonSelectionView(selectedButton: $selectedButton, onButtonSelected: { screen in
+                    currentScreen = screen
                 }, onBackTapped: {
                     currentScreen = .home
                 })
             case .textInput:
                 TextInputView(inputText: $inputText) {
                     // Instead of direct navigation, call generation function
+                    generateAudioFromInputs()
+                }
+            case .cardInput:
+                CardInputView(selectedCard: $inputText) {
+                    generateAudioFromInputs()
+                }
+            case .numberInput:
+                NumberInputView(selectedNumber: $inputText) {
+                    generateAudioFromInputs()
+                }
+            case .starSignInput:
+                StarSignInputView(selectedSign: $inputText) {
                     generateAudioFromInputs()
                 }
             case .voiceMemos:
@@ -952,7 +969,7 @@ struct TipCard: View {
 
 struct ButtonSelectionView: View {
     @Binding var selectedButton: String
-    let onButtonSelected: () -> Void
+    let onButtonSelected: (AppScreen) -> Void
     let onBackTapped: () -> Void
     
     let buttonTitles = [
@@ -974,7 +991,17 @@ struct ButtonSelectionView: View {
                     ForEach(Array(buttonTitles.enumerated()), id: \.offset) { index, title in
                         Button(action: {
                             selectedButton = title
-                            onButtonSelected()
+                            // Route to appropriate screen based on button type
+                            switch title {
+                            case "Cards":
+                                onButtonSelected(.cardInput)
+                            case "Numbers":
+                                onButtonSelected(.numberInput)
+                            case "Star Signs":
+                                onButtonSelected(.starSignInput)
+                            default:
+                                onButtonSelected(.textInput)
+                            }
                         }) {
                             Text(title)
                                 .font(.system(size: 16, weight: .medium))
@@ -1047,6 +1074,471 @@ struct TextInputView: View {
 }
 
 
+
+// MARK: - Specialized Input Views
+
+// Card Input View
+struct CardInputView: View {
+    @Binding var selectedCard: String
+    let onCardSelected: () -> Void
+    
+    let cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+    let suits = ["♠", "♥", "♦", "♣"]
+    
+    @State private var selectedValue: String = ""
+    @State private var selectedSuit: String = ""
+    
+    var body: some View {
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.05, blue: 0.1),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Header
+                VStack(spacing: 8) {
+                    Text("Select a Card")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("Choose a card value and suit")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.top, 60)
+                
+                // Card Values Section
+                VStack(spacing: 16) {
+                    Text("Card Value")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                        ForEach(cardValues, id: \.self) { value in
+                            Button(action: {
+                                selectedValue = value
+                                updateSelectedCard()
+                            }) {
+                                Text(value)
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(selectedValue == value ? .black : .white)
+                                    .frame(width: 60, height: 60)
+                                    .background(selectedValue == value ? Color.white : Color.white.opacity(0.2))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+                
+                // Suits Section
+                VStack(spacing: 16) {
+                    Text("Suit")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    HStack(spacing: 20) {
+                        ForEach(suits, id: \.self) { suit in
+                            Button(action: {
+                                selectedSuit = suit
+                                updateSelectedCard()
+                            }) {
+                                Text(suit)
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundColor(selectedSuit == suit ? .black : .white)
+                                    .frame(width: 70, height: 70)
+                                    .background(selectedSuit == suit ? Color.white : Color.white.opacity(0.1))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+                
+                // Selected Card Display
+                if !selectedValue.isEmpty && !selectedSuit.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("Selected Card")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Text("\(selectedValue)\(selectedSuit)")
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 16)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(16)
+                    }
+                }
+                
+                Spacer()
+                
+                // Generate Button
+                if !selectedValue.isEmpty && !selectedSuit.isEmpty {
+                    Button(action: onCardSelected) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 18, weight: .medium))
+                            
+                            Text("Generate Voice Memo")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color(.systemBlue),
+                                    Color(.systemPurple)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(16)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .padding(.horizontal, 32)
+                }
+                
+                Spacer()
+            }
+        }
+    }
+    
+    private func updateSelectedCard() {
+        if !selectedValue.isEmpty && !selectedSuit.isEmpty {
+            selectedCard = "\(selectedValue) of \(getSuitName(selectedSuit))"
+        }
+    }
+    
+    private func getSuitColor(_ suit: String) -> Color {
+        switch suit {
+        case "♥", "♦":
+            return .red
+        case "♠", "♣":
+            return .white
+        default:
+            return .white
+        }
+    }
+    
+    private func getSuitName(_ suit: String) -> String {
+        switch suit {
+        case "♠":
+            return "Spades"
+        case "♥":
+            return "Hearts"
+        case "♦":
+            return "Diamonds"
+        case "♣":
+            return "Clubs"
+        default:
+            return ""
+        }
+    }
+}
+
+// Number Input View
+struct NumberInputView: View {
+    @Binding var selectedNumber: String
+    let onNumberSelected: () -> Void
+    
+    @State private var tensDigit: String = ""
+    @State private var onesDigit: String = ""
+    
+    let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    
+    var body: some View {
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.05, blue: 0.1),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Header
+                VStack(spacing: 8) {
+                    Text("Select a Number")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("Choose a two-digit number (00-99)")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.top, 60)
+                
+                // Tens Digit Section
+                VStack(spacing: 16) {
+                    Text("Tens Digit")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
+                        ForEach(digits, id: \.self) { digit in
+                            Button(action: {
+                                tensDigit = digit
+                                updateSelectedNumber()
+                            }) {
+                                Text(digit)
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(tensDigit == digit ? .black : .white)
+                                    .frame(width: 50, height: 50)
+                                    .background(tensDigit == digit ? Color.white : Color.white.opacity(0.2))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+                
+                // Ones Digit Section
+                VStack(spacing: 16) {
+                    Text("Ones Digit")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
+                        ForEach(digits, id: \.self) { digit in
+                            Button(action: {
+                                onesDigit = digit
+                                updateSelectedNumber()
+                            }) {
+                                Text(digit)
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(onesDigit == digit ? .black : .white)
+                                    .frame(width: 50, height: 50)
+                                    .background(onesDigit == digit ? Color.white : Color.white.opacity(0.2))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+                
+                // Selected Number Display
+                if !tensDigit.isEmpty && !onesDigit.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("Selected Number")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        Text("\(tensDigit)\(onesDigit)")
+                            .font(.system(size: 64, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 20)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(16)
+                    }
+                }
+                
+                Spacer()
+                
+                // Generate Button
+                if !tensDigit.isEmpty && !onesDigit.isEmpty {
+                    Button(action: onNumberSelected) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 18, weight: .medium))
+                            
+                            Text("Generate Voice Memo")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color(.systemBlue),
+                                    Color(.systemPurple)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(16)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .padding(.horizontal, 32)
+                }
+                
+                Spacer()
+            }
+        }
+    }
+    
+    private func updateSelectedNumber() {
+        if !tensDigit.isEmpty && !onesDigit.isEmpty {
+            selectedNumber = "\(tensDigit)\(onesDigit)"
+        }
+    }
+}
+
+// Star Sign Input View
+struct StarSignInputView: View {
+    @Binding var selectedSign: String
+    let onSignSelected: () -> Void
+    
+    let starSigns = [
+        ("♈", "Aries"), ("♉", "Taurus"), ("♊", "Gemini"),
+        ("♋", "Cancer"), ("♌", "Leo"), ("♍", "Virgo"),
+        ("♎", "Libra"), ("♏", "Scorpio"), ("♐", "Sagittarius"),
+        ("♑", "Capricorn"), ("♒", "Aquarius"), ("♓", "Pisces")
+    ]
+    
+    @State private var selectedSignName: String = ""
+    
+    var body: some View {
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.05, blue: 0.1),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Header
+                VStack(spacing: 8) {
+                    Text("Select a Star Sign")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("Choose your zodiac sign")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.top, 60)
+                
+                // Star Signs Grid
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+                    ForEach(starSigns, id: \.1) { sign in
+                        Button(action: {
+                            selectedSignName = sign.1
+                            selectedSign = sign.1
+                        }) {
+                            VStack(spacing: 8) {
+                                Text(sign.0)
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundColor(selectedSignName == sign.1 ? .black : .white)
+                                
+                                Text(sign.1)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(selectedSignName == sign.1 ? .black : .white)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 90)
+                            .background(selectedSignName == sign.1 ? Color.white : Color.white.opacity(0.1))
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+                
+                // Selected Sign Display
+                if !selectedSignName.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("Selected Sign")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        let selectedSignData = starSigns.first { $0.1 == selectedSignName }
+                        if let signData = selectedSignData {
+                            HStack(spacing: 16) {
+                                Text(signData.0)
+                                    .font(.system(size: 48, weight: .bold))
+                                    .foregroundColor(.white)
+                                
+                                Text(signData.1)
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 20)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(16)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Generate Button
+                if !selectedSignName.isEmpty {
+                    Button(action: onSignSelected) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 18, weight: .medium))
+                            
+                            Text("Generate Voice Memo")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color(.systemBlue),
+                                    Color(.systemPurple)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(16)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .padding(.horizontal, 32)
+                }
+                
+                Spacer()
+            }
+        }
+    }
+}
 
 // Enhanced RecordingData struct to handle both file-based and data-based recordings
 struct RecordingData: Identifiable, Equatable {
@@ -2057,8 +2549,8 @@ struct EditScreenView: View {
                 // Premium gradient background
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(.systemBlue).opacity(0.1),
-                        Color(.systemPurple).opacity(0.05),
+                        Color(.systemBlue).opacity(0.2),
+                        Color(.systemPurple).opacity(0.1),
                         Color(.systemBackground)
                     ]),
                     startPoint: .topLeading,
@@ -2076,8 +2568,8 @@ struct EditScreenView: View {
                                     .fill(
                                         LinearGradient(
                                             gradient: Gradient(colors: [
-                                                Color(.systemBlue).opacity(0.2),
-                                                Color(.systemPurple).opacity(0.1)
+                                                Color(.systemBlue).opacity(0.3),
+                                                Color(.systemPurple).opacity(0.2)
                                             ]),
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
@@ -2530,6 +3022,19 @@ struct AudioPlayerView: View {
                     }
                 }
             }
+            .padding(.horizontal, 20)
+            
+            // ADDED: Slider for manual scrubber
+            if duration > 0 {
+                Slider(value: $currentTime, in: 0...duration, onEditingChanged: { editing in
+                    if !editing {
+                        // Seek to new position
+                        audioPlayer?.currentTime = currentTime
+                    }
+                })
+                .accentColor(.blue)
+                .padding(.horizontal, 20)
+            }
         }
         .onAppear {
             setupAudioPlayer()
@@ -2546,7 +3051,7 @@ struct AudioPlayerView: View {
             audioPlayer?.prepareToPlay()
             duration = audioPlayer?.duration ?? 0
         } catch {
-            print("Error setting up audio player: \(error)")
+            print("Error setting up audio player: \(error.localizedDescription)")
         }
     }
     
@@ -3046,7 +3551,7 @@ struct LoginView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Premium gradient background
+                // Premium gradient
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color(.systemGreen).opacity(0.8),
@@ -3333,9 +3838,11 @@ class AuthManager: ObservableObject {
                 return false
             }
         } catch {
-            print("Detailed network error in createAccount: \(error)")
-            self.errorMessage = "Network request failed: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
-            isLoading = false
+            await MainActor.run {
+                print("Detailed network error in createAccount: \(error)")
+                self.errorMessage = "Network request failed: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
+                isLoading = false
+            }
             return false
         }
     }
