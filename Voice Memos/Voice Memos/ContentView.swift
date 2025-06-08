@@ -72,9 +72,11 @@ struct ContentView: View {
                     currentScreen = .createAccount
                 })
             case .buttonSelection:
-                ButtonSelectionView(selectedButton: $selectedButton) {
+                ButtonSelectionView(selectedButton: $selectedButton, onButtonSelected: {
                     currentScreen = .textInput
-                }
+                }, onBackTapped: {
+                    currentScreen = .home
+                })
             case .textInput:
                 TextInputView(inputText: $inputText) {
                     // Instead of direct navigation, call generation function
@@ -420,6 +422,7 @@ struct TutorialView: View {
 struct ButtonSelectionView: View {
     @Binding var selectedButton: String
     let onButtonSelected: () -> Void
+    let onBackTapped: () -> Void
     
     let buttonTitles = [
         "Cards", "Numbers", "Phobias", "Years",
@@ -432,24 +435,49 @@ struct ButtonSelectionView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .ignoresSafeArea()
+            
+            VStack {
+                Spacer()
                 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
-                ForEach(Array(buttonTitles.enumerated()), id: \.offset) { index, title in
-                    Button(action: {
-                        selectedButton = title
-                        onButtonSelected()
-                    }) {
-                        Text(title)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(12)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
+                    ForEach(Array(buttonTitles.enumerated()), id: \.offset) { index, title in
+                        Button(action: {
+                            selectedButton = title
+                            onButtonSelected()
+                        }) {
+                            Text(title)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.gray.opacity(0.2))
+                                .cornerRadius(12)
+                        }
+                        .frame(height: 120)
                     }
-                    .frame(height: 120)
                 }
+                .padding(.horizontal, 20)
+                
+                Spacer()
+                
+                // Back button at bottom right
+                HStack {
+                    Spacer()
+                    Button(action: onBackTapped) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.clear)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.clear)
+                        .cornerRadius(25)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, 20)
         }
     }
 }
@@ -1340,7 +1368,13 @@ struct EditScreenView: View {
 
     var body: some View {
         Form {
-            connectionStatusView
+            // Simple back button with no extra padding or styling
+            Button(action: onBackTapped) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+            }
             languagePreferenceSection
             advancedSettingsSection
             
@@ -1350,14 +1384,14 @@ struct EditScreenView: View {
                 }
             }
         }
-        .navigationTitle("Settings")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                    onBackTapped()
-                }
-            }
-        }
+        // .navigationTitle("Settings")
+        // .toolbar {
+        //     ToolbarItem(placement: .navigationBarLeading) {
+        //         Button("Back") {
+        //             onBackTapped()
+        //         }
+        //     }
+        // }
         .sheet(isPresented: $showVoiceCloneSheet) {
             VoiceCloneSheet(apiManager: apiManager)
         }
@@ -1371,30 +1405,6 @@ struct EditScreenView: View {
                 // await apiManager.fetchUserSettings() // Assuming this is called elsewhere or as needed
             }
         }
-    }
-    
-    // MARK: - View Components
-    private var connectionStatusView: some View {
-        HStack {
-            if apiManager.connectionStatus == .connected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text("Connected to backend server")
-                    .foregroundColor(.green)
-            } else if apiManager.connectionStatus == .failed {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.red)
-                Text("Failed to connect to backend server")
-                    .foregroundColor(.red)
-            } else {
-                ProgressView()
-                    .scaleEffect(0.7)
-                Text("Checking connection...")
-                    .foregroundColor(.gray)
-            }
-        }
-        .font(.caption)
-        .padding(.vertical, 5)
     }
     
     private var languagePreferenceSection: some View {
