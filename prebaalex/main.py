@@ -501,12 +501,22 @@ def register():
 
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
+    # Define default settings for a new user
+    default_settings = {
+        "language": "en",  # Default language
+        "voice_similarity": 0.85,
+        "stability": 0.7,
+        "add_background_sound": True,
+        "background_volume": 0.5
+    }
+
     try:
         user_id = users_collection.insert_one({
             "username": username,
             "email": email,
             "password": hashed_password,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow(),
+            "settings": default_settings  # Add default settings here
         }).inserted_id
 
         # Mark activation code as used
@@ -520,7 +530,6 @@ def register():
                 }
             }
         )
-        # For now, just returning success. JWT generation would go here.
         return jsonify({"message": "User registered successfully", "user_id": str(user_id)}), 201
 
     except Exception as e:
@@ -637,31 +646,92 @@ def generate_voice_clone():
 @app.route('/me', methods=['GET'])
 @token_required
 def me():
-    user = g.current_user
+    user_data = g.current_user
+    # Ensure settings are returned, providing defaults if not present
+    default_settings = {
+        "language": "en",
+        "voice_similarity": 0.85,
+        "stability": 0.7,
+        "add_background_sound": True,
+        "background_volume": 0.5
+    }
+    settings = user_data.get("settings", default_settings)
+
     return jsonify({
-        "user_id": str(user["_id"]),
-        "username": user["username"],
-        "email": user["email"],
-        "voice_clone_id": user.get("voice_clone_id")
+        "user_id": str(user_data["_id"]),
+        "username": user_data["username"],
+        "email": user_data["email"],
+        "voice_clone_id": user_data.get("voice_clone_id"), # May not exist
+        "settings": settings # Add settings to the response
     }), 200
 
-@app.route('/delete-voice-clone', methods=['DELETE'])
+@app.route('/update-settings', methods=['POST'])
 @token_required
-def delete_voice_clone():
-    """Endpoint to delete user's voice clone from ElevenLabs and MongoDB"""
-    existing_id = g.current_user.get('voice_clone_id')
-    if not existing_id:
-        return jsonify({"message": "No voice clone to delete"}), 404
-    # Delete on ElevenLabs
-    delete_url = f"https://api.elevenlabs.io/v1/voices/{existing_id}"
+def update_settings():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    current_user_id = g.current_user["_id"]
+    
+    # Define allowed settings keys and their expected types/validation
+    # This helps in sanitizing input
+    allowed_settings = {
+        "language": str,
+        "voice_similarity": float,
+        "stability": float,
+        "add_background_sound": bool,
+        "background_volume": float
+    }
+    
+    new_settings = {}
+    for key, value_type in allowed_settings.items():
+        if key in data:
+            value = data[key]
+            # Basic type checking
+            if not isinstance(value, value_type):
+                return jsonify({"error": f"Invalid type for '{key}'. Expected {value_type.__name__}."}), 400
+            
+            # Specific range checks (optional, but good practice)
+            if key == "voice_similarity" and not (0.0 <= value <= 1.0):
+                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
+            if key == "stability" and not (0.0 <= value <= 1.0):
+                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
+            if key == "background_volume" and not (0.0 <= value <= 1.0):
+                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
+            if key == "language" and value not in ["en", "es", "fr", "de", "it", "pt", "hi", "ja", "ko", "zh-CN"]: # Example list
+                 # Consider making this list more dynamic or comprehensive
+                print(f"Warning: Language '{value}' not in predefined list. Saving anyway.")
+                # return jsonify({"error": f"Unsupported language code '{value}'."}), 400
+
+
+            new_settings[key] = value
+
+    if not new_settings:
+        return jsonify({"error": "No valid settings provided to update."}), 400
+
     try:
-        del_resp = requests.delete(delete_url, headers=headers)
-        del_resp.raise_for_status()
+        # Fetch current settings to merge, or use an empty dict if none exist
+        user_doc = users_collection.find_one({"_id": current_user_id})
+        current_settings = user_doc.get("settings", {})
+        
+        # Update current settings with new values
+        current_settings.update(new_settings)
+
+        result = users_collection.update_one(
+            {"_id": current_user_id},
+            {"$set": {"settings": current_settings}}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"error": "User not found."}), 404
+        
+        return jsonify({"message": "Settings updated successfully.", "settings": current_settings}), 200
+
     except Exception as e:
-        print(f"Failed to delete voice clone {existing_id} on ElevenLabs: {e}")
-    # Remove from MongoDB
-    users_collection.update_one({"_id": g.current_user['_id']}, {"$unset": {"voice_clone_id": ""}})
-    return jsonify({"message": "Voice clone deleted"}), 200
+        print(f"Error updating settings: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal error occurred while updating settings."}), 500
 
 # Configuration for CORS and next endpoints ... existing code ...
 @app.after_request
