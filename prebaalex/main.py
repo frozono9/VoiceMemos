@@ -500,43 +500,38 @@ def register():
         return jsonify({"error": "Email already exists"}), 409
 
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-    # Define default settings for a new user
+    
+    # Default user settings
     default_settings = {
-        "language": "en",  # Default language
+        "language": "english", # Default language
         "voice_similarity": 0.85,
-        "stability": 0.7,
-        "add_background_sound": True,
-        "background_volume": 0.5
+        "stability": 0.70,
+        "add_background_sound": True, # NEW
+        "background_volume": 0.5      # NEW
     }
 
+    user_data = {
+        "username": username,
+        "email": email,
+        "password": hashed_password,
+        "created_at": datetime.utcnow(),
+        "settings": default_settings, # Add default settings
+        "voice_clone_id": None, # Initialize voice_clone_id
+        "voice_ids": [] # Initialize voice_ids list for multiple cloned voices
+    }
+    
     try:
-        user_id = users_collection.insert_one({
-            "username": username,
-            "email": email,
-            "password": hashed_password,
-            "created_at": datetime.utcnow(),
-            "settings": default_settings  # Add default settings here
-        }).inserted_id
-
+        result = users_collection.insert_one(user_data)
         # Mark activation code as used
         activation_codes_collection.update_one(
-            {"_id": activation_code["_id"]},
-            {
-                "$set": {
-                    "used": True,
-                    "used_by": user_id,
-                    "used_at": datetime.utcnow()
-                }
-            }
+            {"_id": activation_code['_id']},
+            {"$set": {"used": True, "used_by": result.inserted_id, "used_at": datetime.utcnow()}}
         )
-        return jsonify({"message": "User registered successfully", "user_id": str(user_id)}), 201
-
+        return jsonify({"message": "User registered successfully", "user_id": str(result.inserted_id)}), 201
     except Exception as e:
-        print(f"Error during registration: {e}")
+        print(f"Error during user registration: {e}")
         traceback.print_exc()
-        return jsonify({"error": "An internal error occurred during registration."}), 500
-
+        return jsonify({"error": "Registration failed due to a server error"}), 500
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -646,24 +641,65 @@ def generate_voice_clone():
 @app.route('/me', methods=['GET'])
 @token_required
 def me():
-    user_data = g.current_user
-    # Ensure settings are returned, providing defaults if not present
-    default_settings = {
-        "language": "en",
-        "voice_similarity": 0.85,
-        "stability": 0.7,
+    user = g.current_user
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Ensure settings exist and have all default fields if some are missing
+    user_settings = user.get("settings", {})
+    
+    # Define complete default settings structure
+    default_settings_template = {
+        "language": "english",
+        "voice_similarity": 0.85, # Ensure this matches UserSettings in Swift if it's persisted
+        "stability": 0.70,
         "add_background_sound": True,
-        "background_volume": 0.5
+        "background_volume": 0.5,
+        "voice_ids": user.get("voice_ids", []) # Include voice_ids from user document
     }
-    settings = user_data.get("settings", default_settings)
+
+    # Merge user_settings with defaults, giving priority to user_settings
+    # This ensures all keys from default_settings_template are present
+    final_settings = {**default_settings_template, **user_settings}
+    # Ensure voice_ids is correctly sourced from the main user document, not potentially overwritten by a stale settings object
+    final_settings["voice_ids"] = user.get("voice_ids", [])
+
 
     return jsonify({
-        "user_id": str(user_data["_id"]),
-        "username": user_data["username"],
-        "email": user_data["email"],
-        "voice_clone_id": user_data.get("voice_clone_id"), # May not exist
-        "settings": settings # Add settings to the response
+        "user_id": str(user["_id"]),
+        "username": user["username"],
+        "email": user["email"],
+        "settings": final_settings, # Return merged settings
+        "voice_clone_id": user.get("voice_clone_id"), # Keep this for compatibility if needed
+        "voice_ids": user.get("voice_ids", []) # Ensure this is directly from user doc
     }), 200
+
+@app.route('/delete-voice-clone', methods=['DELETE'])
+@token_required
+def delete_voice_clone():
+    user = g.current_user
+    existing_id = user.get('voice_clone_id')
+    
+    if not existing_id:
+        return jsonify({"error": "No voice clone found to delete"}), 404
+    
+    # Delete voice clone from ElevenLabs
+    delete_url = f"https://api.elevenlabs.io/v1/voices/{existing_id}"
+    try:
+        del_resp = requests.delete(delete_url, headers=headers)
+        del_resp.raise_for_status()
+        print(f"Deleted voice clone {existing_id} for user {user.get('username')}")
+    except Exception as e:
+        print(f"Failed to delete voice clone {existing_id}: {e}")
+        return jsonify({"error": f"Failed to delete voice clone from ElevenLabs: {str(e)}"}), 500
+    
+    # Remove voice_clone_id from user document in MongoDB
+    users_collection.update_one(
+        {"_id": user['_id']}, 
+        {"$unset": {"voice_clone_id": ""}}
+    )
+    
+    return jsonify({"message": "Voice clone deleted successfully"}), 200
 
 @app.route('/update-settings', methods=['POST'])
 @token_required
@@ -672,66 +708,86 @@ def update_settings():
     if not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
 
-    current_user_id = g.current_user["_id"]
-    
-    # Define allowed settings keys and their expected types/validation
-    # This helps in sanitizing input
-    allowed_settings = {
-        "language": str,
-        "voice_similarity": float,
-        "stability": float,
-        "add_background_sound": bool,
-        "background_volume": float
-    }
-    
-    new_settings = {}
-    for key, value_type in allowed_settings.items():
-        if key in data:
-            value = data[key]
-            # Basic type checking
-            if not isinstance(value, value_type):
-                return jsonify({"error": f"Invalid type for '{key}'. Expected {value_type.__name__}."}), 400
+    user = g.current_user
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    current_settings = user.get("settings", {})
+    updated_fields = {}
+
+    # Language
+    if 'language' in data:
+        lang = data['language']
+        if not isinstance(lang, str) or lang not in ["english", "spanish"]: # Add more valid languages as needed
+            return jsonify({"error": "Invalid language value"}), 400
+        updated_fields["settings.language"] = lang
+
+    # Voice Similarity
+    if 'voice_similarity' in data:
+        similarity = data['voice_similarity']
+        try:
+            similarity_float = float(similarity)
+            if not (0.0 <= similarity_float <= 1.0):
+                raise ValueError("Similarity must be between 0.0 and 1.0")
+            updated_fields["settings.voice_similarity"] = similarity_float
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid voice_similarity value. Must be a float between 0.0 and 1.0."}), 400
+
+    # Stability
+    if 'stability' in data:
+        stability = data['stability']
+        try:
+            stability_float = float(stability)
+            if not (0.0 <= stability_float <= 1.0):
+                raise ValueError("Stability must be between 0.0 and 1.0")
+            updated_fields["settings.stability"] = stability_float
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid stability value. Must be a float between 0.0 and 1.0."}), 400
             
-            # Specific range checks (optional, but good practice)
-            if key == "voice_similarity" and not (0.0 <= value <= 1.0):
-                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
-            if key == "stability" and not (0.0 <= value <= 1.0):
-                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
-            if key == "background_volume" and not (0.0 <= value <= 1.0):
-                return jsonify({"error": f"'{key}' must be between 0.0 and 1.0."}), 400
-            if key == "language" and value not in ["en", "es", "fr", "de", "it", "pt", "hi", "ja", "ko", "zh-CN"]: # Example list
-                 # Consider making this list more dynamic or comprehensive
-                print(f"Warning: Language '{value}' not in predefined list. Saving anyway.")
-                # return jsonify({"error": f"Unsupported language code '{value}'."}), 400
+    # Add Background Sound
+    if 'add_background_sound' in data:
+        add_bg_sound = data['add_background_sound']
+        if not isinstance(add_bg_sound, bool):
+            return jsonify({"error": "Invalid add_background_sound value. Must be a boolean."}), 400
+        updated_fields["settings.add_background_sound"] = add_bg_sound
 
+    # Background Volume
+    if 'background_volume' in data:
+        bg_volume = data['background_volume']
+        try:
+            bg_volume_float = float(bg_volume)
+            if not (0.0 <= bg_volume_float <= 1.0):
+                raise ValueError("Background volume must be between 0.0 and 1.0")
+            updated_fields["settings.background_volume"] = bg_volume_float
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid background_volume value. Must be a float between 0.0 and 1.0."}), 400
 
-            new_settings[key] = value
-
-    if not new_settings:
-        return jsonify({"error": "No valid settings provided to update."}), 400
+    if not updated_fields:
+        return jsonify({"message": "No settings provided to update.", "settings": current_settings}), 200
 
     try:
-        # Fetch current settings to merge, or use an empty dict if none exist
-        user_doc = users_collection.find_one({"_id": current_user_id})
-        current_settings = user_doc.get("settings", {})
+        users_collection.update_one({"_id": user["_id"]}, {"$set": updated_fields})
+        # Fetch the updated user document to return the latest settings
+        updated_user = users_collection.find_one({"_id": user["_id"]})
         
-        # Update current settings with new values
-        current_settings.update(new_settings)
-
-        result = users_collection.update_one(
-            {"_id": current_user_id},
-            {"$set": {"settings": current_settings}}
-        )
-
-        if result.matched_count == 0:
-            return jsonify({"error": "User not found."}), 404
+        # Prepare the settings to be returned, ensuring defaults for any missing fields
+        final_settings = {
+            "language": "english",
+            "voice_similarity": 0.85,
+            "stability": 0.70,
+            "add_background_sound": True,
+            "background_volume": 0.5,
+            "voice_ids": updated_user.get("voice_ids", []) # Ensure voice_ids is included
+        }
+        # Merge the actually updated settings from DB
+        if updated_user and "settings" in updated_user:
+            final_settings.update(updated_user["settings"])
         
-        return jsonify({"message": "Settings updated successfully.", "settings": current_settings}), 200
-
+        return jsonify({"message": "Settings updated successfully", "settings": final_settings}), 200
     except Exception as e:
         print(f"Error updating settings: {e}")
         traceback.print_exc()
-        return jsonify({"error": "An internal error occurred while updating settings."}), 500
+        return jsonify({"error": "Failed to update settings due to a server error"}), 500
 
 # Configuration for CORS and next endpoints ... existing code ...
 @app.after_request

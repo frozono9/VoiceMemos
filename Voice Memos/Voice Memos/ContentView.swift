@@ -2646,49 +2646,49 @@ struct VoiceCloneSheet: View {
                         }
                         
                         // Voice Clone Info Section
-                        VStack(spacing: 16) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Clone ID")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.gray)
-                                    Text(cloneId)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
+                        // VStack(spacing: 16) {
+                        //     HStack {
+                        //         VStack(alignment: .leading, spacing: 4) {
+                        //             Text("Clone ID")
+                        //                 .font(.system(size: 12, weight: .medium))
+                        //                 .foregroundColor(.gray)
+                        //             Text(cloneId)
+                        //                 .font(.system(size: 14, weight: .medium))
+                        //                 .foregroundColor(.white)
+                        //                 .lineLimit(1)
+                        //                 .truncationMode(.middle)
+                        //         }
                                 
-                                Spacer()
+                        //         Spacer()
                                 
-                                Button(action: {
-                                    UIPasteboard.general.string = cloneId
-                                    // Provide haptic feedback
-                                    let generator = UIImpactFeedbackGenerator(style: .light)
-                                    generator.impactOccurred()
+                        //         Button(action: {
+                        //             UIPasteboard.general.string = cloneId
+                        //             // Provide haptic feedback
+                        //             let generator = UIImpactFeedbackGenerator(style: .light)
+                        //             generator.impactOccurred()
                                     
-                                    // Temporary status message
-                                    statusMessage = "Clone ID copied to clipboard"
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                        if statusMessage == "Clone ID copied to clipboard" {
-                                            statusMessage = nil
-                                        }
-                                    }
-                                }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.blue)
-                                        .padding(8)
-                                        .background(Color.blue.opacity(0.15))
-                                        .cornerRadius(8)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(12)
-                        }
-                        .padding(.horizontal, 20)
+                        //             // Temporary status message
+                        //             statusMessage = "Clone ID copied to clipboard"
+                        //             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        //                 if statusMessage == "Clone ID copied to clipboard" {
+                        //                     statusMessage = nil
+                        //                 }
+                        //             }
+                        //         }) {
+                        //             Image(systemName: "doc.on.doc")
+                        //                 .font(.system(size: 16))
+                        //                 .foregroundColor(.blue)
+                        //                 .padding(8)
+                        //                 .background(Color.blue.opacity(0.15))
+                        //                 .cornerRadius(8)
+                        //         }
+                        //     }
+                        //     .padding(.horizontal, 20)
+                        //     .padding(.vertical, 12)
+                        //     .background(Color.gray.opacity(0.1))
+                        //     .cornerRadius(12)
+                        // }
+                        // .padding(.horizontal, 20)
                         
                         // Management Options
                         VStack(spacing: 12) {
