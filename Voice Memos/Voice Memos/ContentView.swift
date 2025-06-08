@@ -479,7 +479,7 @@ struct HomeScreenView: View {
                         .padding(.top, 60)
                         
                         // Subtitle
-                        Text("Create AI-powered voice memos")
+                        Text("Visions by Alex Latorre and Nicolas Rosales")
                             .font(.system(size: 18, weight: .medium, design: .default))
                             .foregroundColor(.white.opacity(0.7))
                             .multilineTextAlignment(.center)
@@ -613,7 +613,7 @@ struct HomeScreenView: View {
                         }
                         
                         // App version info
-                        Text("Voice Memos AI • Version 1.0")
+                        Text("Visions • Version 1.0")
                             .font(.system(size: 12, weight: .regular))
                             .foregroundColor(.white.opacity(0.5))
                     }
@@ -694,7 +694,7 @@ struct TutorialView: View {
                             }
                             
                             VStack(spacing: 8) {
-                                Text("Voice Memos AI")
+                                Text("Visions")
                                     .font(.system(size: 32, weight: .bold, design: .rounded))
                                     .foregroundColor(.primary)
                                 
@@ -2732,23 +2732,6 @@ struct EditScreenView: View {
                 }
                 .font(.system(size: 17, weight: .medium))
             }
-            
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                    onBackTapped()
-                }
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color(.systemBlue),
-                            Color(.systemPurple)
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-            }
         }
         .onAppear {
             // Always fetch fresh user data when settings screen appears
@@ -3385,7 +3368,7 @@ struct CreateAccountView: View {
                             }
                             
                             VStack(spacing: 8) {
-                                Text("Join Voice Memos AI")
+                                Text("Join Visions")
                                     .font(.system(size: 34, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                                     .multilineTextAlignment(.center)
