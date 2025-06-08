@@ -2,6 +2,59 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 import CoreHaptics // Ensure CoreHaptics is imported, though UIImpactFeedbackGenerator is in UIKit
+import UIKit // Added for UIPasteboard
+
+// MARK: - Helper Types for JSON Decoding
+
+// Helper to decode mixed-type JSON values
+struct AnyCodable: Codable {
+    let value: Any
+    
+    init<T>(_ value: T) {
+        self.value = value
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if let boolValue = try? container.decode(Bool.self) {
+            value = boolValue
+        } else if let intValue = try? container.decode(Int.self) {
+            value = intValue
+        } else if let doubleValue = try? container.decode(Double.self) {
+            value = doubleValue
+        } else if let stringValue = try? container.decode(String.self) {
+            value = stringValue
+        } else if let arrayValue = try? container.decode([AnyCodable].self) {
+            value = arrayValue.map { $0.value }
+        } else if let dictValue = try? container.decode([String: AnyCodable].self) {
+            value = dictValue.mapValues { $0.value }
+        } else {
+            throw DecodingError.typeMismatch(AnyCodable.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unable to decode value"))
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        
+        switch value {
+        case let boolValue as Bool:
+            try container.encode(boolValue)
+        case let intValue as Int:
+            try container.encode(intValue)
+        case let doubleValue as Double:
+            try container.encode(doubleValue)
+        case let stringValue as String:
+            try container.encode(stringValue)
+        case let arrayValue as [Any]:
+            try container.encode(arrayValue.map { AnyCodable($0) })
+        case let dictValue as [String: Any]:
+            try container.encode(dictValue.mapValues { AnyCodable($0) })
+        default:
+            throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: encoder.codingPath, debugDescription: "Unable to encode value"))
+        }
+    }
+}
 
 // MARK: - Global Enums and Structs (Accessible throughout the file)
 
@@ -2525,162 +2578,407 @@ class AuthManager: ObservableObject {
 
 // MARK: - Voice Clone Sheet
 struct VoiceCloneSheet: View {
-    @Environment(\.presentationMode) var presentationMode // Use @Environment to dismiss
+    @Environment(\.presentationMode) var presentationMode
 
     @ObservedObject var apiManager: VoiceAPIManager
-    // Removed isPresented binding as it's managed by the .sheet modifier
 
     @State private var isRecording = false
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
     @State private var isPlaying = false
     @State private var audioPlayer: AVAudioPlayer?
-    @State private var avDelegate: AVDelegate? // ADDED: Delegate to manage playback finishing
+    @State private var avDelegate: AVDelegate?
     @State private var statusMessage: String?
     @State private var existingCloneId: String?
     @State private var isUploading = false
-    @State private var showOverwriteAlert = false // For overwrite confirmation
+    @State private var showOverwriteAlert = false
+    @State private var recordingTime: Double = 0
+    @State private var recordingTimer: Timer?
+    @State private var audioLevels: [CGFloat] = Array(repeating: 0.3, count: 50)
+    @State private var animationTimer: Timer?
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                if let cloneId = existingCloneId {
-                    Text("Your voice clone ID:")
-                        .font(.headline)
-                    Text(cloneId)
-                        .font(.subheadline)
-                        .padding(.bottom)
-                    HStack(spacing: 20) {
-                        Button("Overwrite Clone") {
-                            showOverwriteAlert = true
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-
-                        Button("Close") {
-                            presentationMode.wrappedValue.dismiss() // Use presentationMode
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.gray)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
+        ZStack {
+            // Dark background
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Spacer()
+                    Button("Done") {
+                        presentationMode.wrappedValue.dismiss()
                     }
-                    .padding(.bottom)
-                    .alert("Overwrite Voice Clone?", isPresented: $showOverwriteAlert) {
-                        Button("Delete", role: .destructive) {
+                    .foregroundColor(.blue)
+                    .font(.system(size: 17, weight: .medium))
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                
+                Spacer()
+                
+                if let cloneId = existingCloneId {
+                    // Existing clone view
+                    VStack(spacing: 40) {
+                        VStack(spacing: 20) {
+                            // Success icon and status
+                            ZStack {
+                                Circle()
+                                    .fill(Color.green.opacity(0.2))
+                                    .frame(width: 120, height: 120)
+                                
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.green)
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Voice Clone Active")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(.white)
+                                
+                                Text("Your voice clone is ready and being used for audio generation.")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 30)
+                            }
+                        }
+                        
+                        // Voice Clone Info Section
+                        VStack(spacing: 16) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Clone ID")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.gray)
+                                    Text(cloneId)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    UIPasteboard.general.string = cloneId
+                                    // Provide haptic feedback
+                                    let generator = UIImpactFeedbackGenerator(style: .light)
+                                    generator.impactOccurred()
+                                    
+                                    // Temporary status message
+                                    statusMessage = "Clone ID copied to clipboard"
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        if statusMessage == "Clone ID copied to clipboard" {
+                                            statusMessage = nil
+                                        }
+                                    }
+                                }) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.blue)
+                                        .padding(8)
+                                        .background(Color.blue.opacity(0.15))
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(12)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Management Options
+                        VStack(spacing: 12) {
+                            // Test Voice Clone Button
+                            Button("Test Voice Clone") {
+                                // This could trigger a test generation or play a sample
+                                statusMessage = "Testing feature coming soon..."
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    if statusMessage == "Testing feature coming soon..." {
+                                        statusMessage = nil
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.blue.opacity(0.8))
+                            .foregroundColor(.white)
+                            .font(.system(size: 16, weight: .medium))
+                            .cornerRadius(10)
+                            
+                            // Replace Voice Clone Button
+                            Button("Replace Voice Clone") {
+                                showOverwriteAlert = true
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.orange.opacity(0.8))
+                            .foregroundColor(.white)
+                            .font(.system(size: 16, weight: .medium))
+                            .cornerRadius(10)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .alert("Replace Voice Clone?", isPresented: $showOverwriteAlert) {
+                        Button("Replace", role: .destructive) {
                             Task { await deleteClone() }
                         }
                         Button("Cancel", role: .cancel) { }
                     } message: {
-                        Text("Are you sure you want to delete your existing voice clone? You can then record a new one.")
+                        Text("Are you sure you want to replace your existing voice clone? This will delete your current clone and allow you to record a new one.")
                     }
                 } else {
-                    Button(action: {
-                        isRecording ? stopRecording() : startRecording()
-                    }) {
-                        Text(isRecording ? "Stop Recording" : "Start Recording")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(isRecording ? Color.red : Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-
-                    if recordingURL != nil {
-                        Button(action: {
-                            if self.isPlaying {
-                                self.audioPlayer?.stop() // Stop the player
-                                self.isPlaying = false   // Manually update UI state
-                            } else {
-                                self.playRecording()
-                            }
-                        }) {
-                            Text(isPlaying ? "Stop Playback" : "Play Recording")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(isPlaying ? Color.red : Color.blue)
+                    // Recording interface
+                    VStack(spacing: 40) {
+                        // Title section
+                        VStack(spacing: 12) {
+                            Text("Create Voice Clone")
+                                .font(.system(size: 28, weight: .bold))
                                 .foregroundColor(.white)
-                                .cornerRadius(8)
+                            
+                            Text(isRecording ? "Recording your voice..." : "Tap to record")
+                                .font(.system(size: 18))
+                                .foregroundColor(.gray)
                         }
-                        .padding(.top)
-                    }
-
-                    Button(action: generateClone) {
-                        if isUploading {
-                            ProgressView()
-                        } else {
-                            Text("Generate Voice Clone")
+                        
+                        // Recording time and waveform
+                        if isRecording || recordingURL != nil {
+                            VStack(spacing: 20) {
+                                // Recording time
+                                Text(formatRecordingTime(recordingTime))
+                                    .font(.system(size: 32, weight: .light))
+                                    .foregroundColor(.white)
+                                    .monospacedDigit()
+                                
+                                // Simple waveform visualization
+                                if isRecording {
+                                    HStack(spacing: 3) {
+                                        ForEach(0..<20, id: \.self) { index in
+                                            RoundedRectangle(cornerRadius: 2)
+                                                .fill(Color.blue)
+                                                .frame(width: 4, height: audioLevels[index] * 40 + 10)
+                                                .animation(.easeInOut(duration: 0.1), value: audioLevels[index])
+                                        }
+                                    }
+                                    .frame(height: 60)
+                                }
+                            }
                         }
-                    }
-                    .disabled(recordingURL == nil || isUploading)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-
-                    if let msg = statusMessage {
-                        Text(msg)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
+                        
+                        // Large circular recording button
+                        ZStack {
+                            // Outer pulsing ring (only when recording)
+                            if isRecording {
+                                Circle()
+                                    .stroke(Color.red.opacity(0.3), lineWidth: 4)
+                                    .frame(width: 200, height: 200)
+                                    .scaleEffect(isRecording ? 1.2 : 1.0)
+                                    .opacity(isRecording ? 0.0 : 1.0)
+                                    .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: isRecording)
+                            }
+                            
+                            // Main button circle
+                            Circle()
+                                .fill(isRecording ? Color.red : Color.blue)
+                                .frame(width: 150, height: 150)
+                                .overlay(
+                                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                                        .font(.system(size: 60, weight: .medium))
+                                        .foregroundColor(.white)
+                                )
+                                .scaleEffect(isRecording ? 0.9 : 1.0)
+                                .animation(.easeInOut(duration: 0.1), value: isRecording)
+                        }
+                        .onTapGesture {
+                            if isRecording {
+                                stopRecording()
+                            } else {
+                                startRecording()
+                            }
+                        }
+                        
+                        // Play button (when recording exists)
+                        if recordingURL != nil && !isRecording {
+                            Button(action: {
+                                if isPlaying {
+                                    audioPlayer?.stop()
+                                    isPlaying = false
+                                } else {
+                                    playRecording()
+                                }
+                            }) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                                        .font(.system(size: 20))
+                                    Text(isPlaying ? "Stop Playback" : "Play Recording")
+                                        .font(.system(size: 17, weight: .medium))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(Color.gray.opacity(0.3))
+                                .cornerRadius(25)
+                            }
+                        }
                     }
                 }
+                
                 Spacer()
+                
+                // Bottom section
+                VStack(spacing: 20) {
+                    if let msg = statusMessage {
+                        Text(msg)
+                            .font(.system(size: 16))
+                            .foregroundColor(msg.contains("success") || msg.contains("created") ? .green : .orange)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                    }
+                    
+                    // Generate button (only show when we have a recording and no existing clone)
+                    if recordingURL != nil && existingCloneId == nil && !isRecording {
+                        Button(action: generateClone) {
+                            HStack(spacing: 12) {
+                                if isUploading {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Image(systemName: "waveform.badge.plus")
+                                        .font(.system(size: 20))
+                                }
+                                
+                                Text(isUploading ? "Creating Voice Clone..." : "Generate Voice Clone")
+                                    .font(.system(size: 17, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.purple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(12)
+                            .disabled(isUploading)
+                            .opacity(isUploading ? 0.7 : 1.0)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.bottom, 40)
             }
-            .padding()
-            .navigationTitle("Voice Clone")
-            .navigationBarItems(trailing: Button("Close") {
-                presentationMode.wrappedValue.dismiss() // Use presentationMode
-            })
-            .onAppear {
-                Task { await fetchExistingClone() }
-            }
+        }
+        .onAppear {
+            Task { await fetchExistingClone() }
+        }
+        .onDisappear {
+            stopAllTimers()
         }
     }
 
     private func fetchExistingClone() async {
+        print("DEBUG: Starting fetchExistingClone()")
         guard let token = apiManager.authManager.authToken,
-              let url = URL(string: "\(apiManager.baseURL)/me") else { return }
+              let url = URL(string: "\(apiManager.baseURL)/me") else { 
+            print("DEBUG: Failed to get token or URL")
+            return 
+        }
+        
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let json = try? JSONDecoder().decode([String: String?].self, from: data),
-               let cloneId = json["voice_clone_id"] {
-                existingCloneId = cloneId
+            print("DEBUG: Making request to /me endpoint")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("DEBUG: Response status code: \(httpResponse.statusCode)")
             }
+            
+            // First, let's see what the raw response looks like
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("DEBUG: Raw response: \(responseString)")
+            }
+            
+            // Define a struct to properly decode the /me endpoint response
+            struct MeResponse: Codable {
+                let user_id: String
+                let username: String
+                let email: String
+                let voice_clone_id: String?
+                let voice_ids: [String]?
+                let settings: [String: AnyCodable]?
+            }
+            
+            let decoder = JSONDecoder()
+            let meResponse = try decoder.decode(MeResponse.self, from: data)
+            
+            print("DEBUG: Successfully decoded response")
+            print("DEBUG: voice_clone_id = \(meResponse.voice_clone_id ?? "nil")")
+            
+            // Update existingCloneId on main thread
+            await MainActor.run {
+                if let cloneId = meResponse.voice_clone_id, !cloneId.isEmpty {
+                    print("DEBUG: Setting existingCloneId to: \(cloneId)")
+                    existingCloneId = cloneId
+                } else {
+                    print("DEBUG: No voice_clone_id found or it's empty")
+                    existingCloneId = nil
+                }
+            }
+            
         } catch {
-            statusMessage = "Failed to load existing clone"
+            print("DEBUG: Error in fetchExistingClone: \(error)")
+            await MainActor.run {
+                statusMessage = "Failed to load existing clone: \(error.localizedDescription)"
+            }
         }
     }
 
     private func startRecording() {
         let session = AVAudioSession.sharedInstance()
         session.requestRecordPermission { granted in
-            guard granted else {
-                statusMessage = "Microphone permission denied"
-                return
-            }
-            do {
-                try session.setCategory(.playAndRecord, mode: .default)
-                try session.setActive(true)
-                let url = FileManager.default.temporaryDirectory.appendingPathComponent("voiceclone.m4a")
-                let settings: [String: Any] = [
-                    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                    AVSampleRateKey: 44100,
-                    AVNumberOfChannelsKey: 1
-                ]
-                audioRecorder = try AVAudioRecorder(url: url, settings: settings)
-                audioRecorder?.record()
-                isRecording = true
-                recordingURL = url
-                statusMessage = nil
-            } catch {
-                statusMessage = "Recording failed: \(error.localizedDescription)"
+            DispatchQueue.main.async {
+                guard granted else {
+                    self.statusMessage = "Microphone permission denied"
+                    return
+                }
+                
+                do {
+                    try session.setCategory(.playAndRecord, mode: .default)
+                    try session.setActive(true)
+                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("voiceclone.m4a")
+                    let settings: [String: Any] = [
+                        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                        AVSampleRateKey: 44100,
+                        AVNumberOfChannelsKey: 1
+                    ]
+                    self.audioRecorder = try AVAudioRecorder(url: url, settings: settings)
+                    self.audioRecorder?.isMeteringEnabled = true
+                    self.audioRecorder?.record()
+                    self.isRecording = true
+                    self.recordingURL = url
+                    self.recordingTime = 0
+                    self.statusMessage = nil
+                    
+                    // Start recording timer
+                    self.recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                        self.recordingTime += 0.1
+                        self.audioRecorder?.updateMeters()
+                    }
+                    
+                    // Start animation timer for waveform
+                    self.startWaveformAnimation()
+                    
+                } catch {
+                    self.statusMessage = "Recording failed: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -2688,6 +2986,29 @@ struct VoiceCloneSheet: View {
     private func stopRecording() {
         audioRecorder?.stop()
         isRecording = false
+        stopAllTimers()
+    }
+
+    private func startWaveformAnimation() {
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            // Simulate audio levels for visual effect
+            for i in 0..<audioLevels.count {
+                audioLevels[i] = CGFloat.random(in: 0.2...1.0)
+            }
+        }
+    }
+
+    private func stopAllTimers() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+
+    private func formatRecordingTime(_ time: Double) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 
     private func playRecording() {
@@ -2741,7 +3062,7 @@ struct VoiceCloneSheet: View {
         guard let url = recordingURL,
               let token = apiManager.authManager.authToken else { return }
         isUploading = true
-        statusMessage = nil
+        statusMessage = "Processing your voice recording..."
         Task {
             do {
                 let endpoint = "\(apiManager.baseURL)/generate-voice-clone"
@@ -2760,17 +3081,24 @@ struct VoiceCloneSheet: View {
                 request.httpBody = body
 
                 let (data, response) = try await URLSession.shared.data(for: request)
-                if let json = try? JSONDecoder().decode([String: String].self, from: data),
-                   let cloneId = json["voice_clone_id"] {
-                    existingCloneId = cloneId
-                    statusMessage = "Clone created!"
-                } else {
-                    statusMessage = "Unexpected response"
+                await MainActor.run {
+                    if let json = try? JSONDecoder().decode([String: String].self, from: data),
+                       let cloneId = json["voice_clone_id"] {
+                        self.existingCloneId = cloneId
+                        self.statusMessage = "Voice clone created successfully!"
+                        self.recordingURL = nil // Clear the recording
+                        self.recordingTime = 0
+                    } else {
+                        self.statusMessage = "Failed to create voice clone. Please try again."
+                    }
+                    self.isUploading = false
                 }
             } catch {
-                statusMessage = "Upload failed: \(error.localizedDescription)"
+                await MainActor.run {
+                    self.statusMessage = "Upload failed: \(error.localizedDescription)"
+                    self.isUploading = false
+                }
             }
-            isUploading = false
         }
     }
 
@@ -2783,15 +3111,19 @@ struct VoiceCloneSheet: View {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                existingCloneId = nil
-                statusMessage = "Existing voice clone deleted. Please record a new one."
-            } else {
-                let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
-                statusMessage = "Delete failed: \(msg)"
+            await MainActor.run {
+                if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                    self.existingCloneId = nil
+                    self.statusMessage = "Voice clone deleted. You can now record a new one."
+                } else {
+                    let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    self.statusMessage = "Delete failed: \(msg)"
+                }
             }
         } catch {
-            statusMessage = "Delete error: \(error.localizedDescription)"
+            await MainActor.run {
+                self.statusMessage = "Delete error: \(error.localizedDescription)"
+            }
         }
     }
 }
