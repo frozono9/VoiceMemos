@@ -531,6 +531,52 @@ struct HomeScreenView: View {
                         .scaleEffect(1.0)
                         .animation(.easeInOut(duration: 0.1), value: 1.0)
                         
+                        // Conditional Bluetooth Routine Button (only for alexlatorre)
+                        if authManager.currentUser?.username == "alexlatorre" {
+                            Button(action: {
+                                // Placeholder action for Bluetooth Routine
+                                print("Bluetooth Routine tapped")
+                            }) {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                        .font(.system(size: 24, weight: .medium))
+                                        .foregroundColor(.black)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Bluetooth Routine")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundColor(.black)
+                                        
+                                        Text("Connect and configure devices")
+                                            .font(.system(size: 14, weight: .regular))
+                                            .foregroundColor(.black.opacity(0.8))
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "arrow.right")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.black.opacity(0.8))
+                                }
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 20)
+                                .background(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.yellow,
+                                            Color.yellow.opacity(0.8)
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(16)
+                                .shadow(color: Color.yellow.opacity(0.3), radius: 8, x: 0, y: 4)
+                            }
+                            .scaleEffect(1.0)
+                            .animation(.easeInOut(duration: 0.1), value: 1.0)
+                        }
+                        
                         // Secondary Actions Grid
                         HStack(spacing: 16) {
                             // Settings Button
