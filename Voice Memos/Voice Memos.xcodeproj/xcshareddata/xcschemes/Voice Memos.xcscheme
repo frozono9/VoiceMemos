@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DD2F564F2DF203FD006AD068"
-               BuildableName = "Voice Memos.app"
-               BlueprintName = "Voice Memos"
+               BuildableName = "Visions.app"
+               BlueprintName = "Visions"
                ReferencedContainer = "container:Voice Memos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DD2F564F2DF203FD006AD068"
-            BuildableName = "Voice Memos.app"
-            BlueprintName = "Voice Memos"
+            BuildableName = "Visions.app"
+            BlueprintName = "Visions"
             ReferencedContainer = "container:Voice Memos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DD2F564F2DF203FD006AD068"
-            BuildableName = "Voice Memos.app"
-            BlueprintName = "Voice Memos"
+            BuildableName = "Visions.app"
+            BlueprintName = "Visions"
             ReferencedContainer = "container:Voice Memos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

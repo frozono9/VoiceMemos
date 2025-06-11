@@ -1018,69 +1018,240 @@ struct ButtonSelectionView: View {
     let onButtonSelected: (AppScreen) -> Void
     let onBackTapped: () -> Void
     
-    let buttonTitles = [
-        "Cards", "Numbers", "Phobias", "Years",
-        "Names", "Star Signs", "Movies", "Custom"
+    let keypadMapping = [
+        (1, "1", nil, ""),
+        (2, "2", "Cards", "CARD"),
+        (3, "3", "Numbers", "NUMS"),
+        (4, "4", "Phobias", "PHOB"),
+        (5, "5", "Years", "YRS"),
+        (6, "6", "Names", "NAME"),
+        (7, "7", "Star Signs", "STAR"),
+        (8, "8", "Movies", "MOV"),
+        (9, "9", "Custom", "CSTM")
     ]
     
     var body: some View {
         ZStack {
-            Image("backgroundImage") // Replace "backgroundImage" with your image name
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .ignoresSafeArea()
+            // Blurred background to match iPhone lock screen
+            LinearGradient(
+                colors: [
+                    Color(red: 0.1, green: 0.2, blue: 0.6),    // Deep blue
+                    Color(red: 0.3, green: 0.1, blue: 0.5),    // Deep purple
+                    Color(red: 0.5, green: 0.2, blue: 0.4),    // Pink-purple
+                    Color(red: 0.2, green: 0.3, blue: 0.7)     // Bright blue
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .blur(radius: 20)
+            .ignoresSafeArea()
             
-            VStack {
+            VStack(spacing: 0) {
                 Spacer()
+                    .frame(height: 40)
                 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
-                    ForEach(Array(buttonTitles.enumerated()), id: \.offset) { index, title in
-                        Button(action: {
-                            selectedButton = title
-                            // Route to appropriate screen based on button type
-                            switch title {
-                            case "Cards":
-                                onButtonSelected(.cardInput)
-                            case "Numbers":
-                                onButtonSelected(.numberInput)
-                            case "Star Signs":
-                                onButtonSelected(.starSignInput)
-                            default:
-                                onButtonSelected(.textInput)
-                            }
-                        }) {
-                            Text(title)
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color.gray.opacity(0.2))
-                                .cornerRadius(12)
-                        }
-                        .frame(height: 120)
+                // Lock icon
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                    .frame(height: 50)
+                
+                // Enter Passcode text
+                Text("Enter Passcode")
+                    .font(.system(size: 20, weight: .light))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                    .frame(height: 30)
+                
+                // Passcode dots (empty circles)
+                HStack(spacing: 22) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        Circle()
+                            .stroke(Color.white, lineWidth: 1.5)
+                            .frame(width: 13, height: 13)
                     }
                 }
-                .padding(.horizontal, 20)
                 
                 Spacer()
+                    .frame(height: 80)
                 
-                // Back button at bottom right
+                // Keypad - 3 rows of buttons
+                VStack(spacing: 20) {
+                    // Row 1: 1, 2, 3
+                    HStack(spacing: 25) {
+                        ForEach(0..<3, id: \.self) { col in
+                            let index = col
+                            let (number, numberText, category, letters) = keypadMapping[index]
+                            
+                            Button(action: {
+                                if let category = category {
+                                    selectedButton = category
+                                    switch category {
+                                    case "Cards":
+                                        onButtonSelected(.cardInput)
+                                    case "Numbers":
+                                        onButtonSelected(.numberInput)
+                                    case "Star Signs":
+                                        onButtonSelected(.starSignInput)
+                                    default:
+                                        onButtonSelected(.textInput)
+                                    }
+                                }
+                            }) {
+                                VStack(spacing: -2) {
+                                    Text(numberText)
+                                        .font(.system(size: 36, weight: .light))
+                                        .foregroundColor(.white)
+                                    
+                                    if !letters.isEmpty {
+                                        Text(letters)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .tracking(1.5)
+                                    }
+                                }
+                                .frame(width: 80, height: 80)
+                                .background(
+                                    Circle()
+                                        .fill(Color.white.opacity(category != nil ? 0.1 : 0.05))
+                                )
+                            }
+                            .disabled(category == nil)
+                        }
+                    }
+                    
+                    // Row 2: 4, 5, 6
+                    HStack(spacing: 25) {
+                        ForEach(3..<6, id: \.self) { index in
+                            let (number, numberText, category, letters) = keypadMapping[index]
+                            
+                            Button(action: {
+                                if let category = category {
+                                    selectedButton = category
+                                    switch category {
+                                    case "Cards":
+                                        onButtonSelected(.cardInput)
+                                    case "Numbers":
+                                        onButtonSelected(.numberInput)
+                                    case "Star Signs":
+                                        onButtonSelected(.starSignInput)
+                                    default:
+                                        onButtonSelected(.textInput)
+                                    }
+                                }
+                            }) {
+                                VStack(spacing: -2) {
+                                    Text(numberText)
+                                        .font(.system(size: 36, weight: .light))
+                                        .foregroundColor(.white)
+                                    
+                                    if !letters.isEmpty {
+                                        Text(letters)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .tracking(1.5)
+                                    }
+                                }
+                                .frame(width: 80, height: 80)
+                                .background(
+                                    Circle()
+                                        .fill(Color.white.opacity(0.1))
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Row 3: 7, 8, 9
+                    HStack(spacing: 25) {
+                        ForEach(6..<9, id: \.self) { index in
+                            let (number, numberText, category, letters) = keypadMapping[index]
+                            
+                            Button(action: {
+                                if let category = category {
+                                    selectedButton = category
+                                    switch category {
+                                    case "Cards":
+                                        onButtonSelected(.cardInput)
+                                    case "Numbers":
+                                        onButtonSelected(.numberInput)
+                                    case "Star Signs":
+                                        onButtonSelected(.starSignInput)
+                                    default:
+                                        onButtonSelected(.textInput)
+                                    }
+                                }
+                            }) {
+                                VStack(spacing: -2) {
+                                    Text(numberText)
+                                        .font(.system(size: 36, weight: .light))
+                                        .foregroundColor(.white)
+                                    
+                                    if !letters.isEmpty {
+                                        Text(letters)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .tracking(1.5)
+                                    }
+                                }
+                                .frame(width: 80, height: 80)
+                                .background(
+                                    Circle()
+                                        .fill(Color.white.opacity(0.1))
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+                    .frame(height: 20)
+                
+                // Zero button row (centered, separate from the 3x3 grid)
                 HStack {
                     Spacer()
-                    Button(action: onBackTapped) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.clear)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.clear)
-                        .cornerRadius(25)
+                    Button(action: {}) {
+                        Text("0")
+                            .font(.system(size: 36, weight: .light))
+                            .foregroundColor(.white)
+                            .frame(width: 80, height: 80)
+                            .background(
+                                Circle()
+                                    .fill(Color.white.opacity(0.1))
+                            )
                     }
+                    .disabled(true)
+                    Spacer()
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 40)
+                
+                Spacer()
+                    .frame(height: 100)
+                
+                // Bottom row: Emergency and Cancel (positioned at the very bottom)
+                HStack {
+                    // Emergency button
+                    Button("Emergency") {
+                        // Could add emergency functionality here if needed
+                    }
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(.white)
+                    .disabled(true)
+                    
+                    Spacer()
+                    
+                    // Cancel button (Back functionality)
+                    Button("Cancel") {
+                        onBackTapped()
+                    }
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(.white)
+                }
+                .padding(.horizontal, 40)
+                
+                Spacer()
+                    .frame(height: 40)
             }
         }
     }

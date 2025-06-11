@@ -7,16 +7,16 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		DD2F56502DF203FD006AD068 /* Voice Memos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Voice Memos.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD2F56502DF203FD006AD068 /* Visions.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Visions.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Voice Memos" target */ = {
+		DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Visions" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = DD2F564F2DF203FD006AD068 /* Voice Memos */;
+			target = DD2F564F2DF203FD006AD068 /* Visions */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -24,7 +24,7 @@
 		DD2F56522DF203FD006AD068 /* Voice Memos */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Voice Memos" target */,
+				DD210E422DF36654002177B1 /* Exceptions for "Voice Memos" folder in "Visions" target */,
 			);
 			path = "Voice Memos";
 			sourceTree = "<group>";
@@ -53,7 +53,7 @@
 		DD2F56512DF203FD006AD068 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				DD2F56502DF203FD006AD068 /* Voice Memos.app */,
+				DD2F56502DF203FD006AD068 /* Visions.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,9 +61,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		DD2F564F2DF203FD006AD068 /* Voice Memos */ = {
+		DD2F564F2DF203FD006AD068 /* Visions */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DD2F565E2DF203FE006AD068 /* Build configuration list for PBXNativeTarget "Voice Memos" */;
+			buildConfigurationList = DD2F565E2DF203FE006AD068 /* Build configuration list for PBXNativeTarget "Visions" */;
 			buildPhases = (
 				DD2F564C2DF203FD006AD068 /* Sources */,
 				DD2F564D2DF203FD006AD068 /* Frameworks */,
@@ -76,11 +76,11 @@
 			fileSystemSynchronizedGroups = (
 				DD2F56522DF203FD006AD068 /* Voice Memos */,
 			);
-			name = "Voice Memos";
+			name = Visions;
 			packageProductDependencies = (
 			);
 			productName = "Voice Memos";
-			productReference = DD2F56502DF203FD006AD068 /* Voice Memos.app */;
+			productReference = DD2F56502DF203FD006AD068 /* Visions.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -112,7 +112,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				DD2F564F2DF203FD006AD068 /* Voice Memos */,
+				DD2F564F2DF203FD006AD068 /* Visions */,
 			);
 		};
 /* End PBXProject section */
@@ -269,6 +269,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Voice Memos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Visions;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -300,6 +301,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Voice Memos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Visions;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -331,7 +333,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DD2F565E2DF203FE006AD068 /* Build configuration list for PBXNativeTarget "Voice Memos" */ = {
+		DD2F565E2DF203FE006AD068 /* Build configuration list for PBXNativeTarget "Visions" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DD2F565F2DF203FE006AD068 /* Debug */,
