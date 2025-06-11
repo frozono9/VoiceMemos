@@ -219,22 +219,30 @@ struct ContentView: View {
                     currentScreen = .home
                 })
             case .textInput:
-                TextInputView(inputText: $inputText) {
+                TextInputView(inputText: $inputText, onTextEntered: {
                     // Instead of direct navigation, call generation function
                     generateAudioFromInputs()
-                }
+                }, onBackTapped: {
+                    currentScreen = .buttonSelection
+                })
             case .cardInput:
-                CardInputView(selectedCard: $inputText) {
+                CardInputView(selectedCard: $inputText, onCardSelected: {
                     generateAudioFromInputs()
-                }
+                }, onBackTapped: {
+                    currentScreen = .buttonSelection
+                })
             case .numberInput:
-                NumberInputView(selectedNumber: $inputText) {
+                NumberInputView(selectedNumber: $inputText, onNumberSelected: {
                     generateAudioFromInputs()
-                }
+                }, onBackTapped: {
+                    currentScreen = .buttonSelection
+                })
             case .starSignInput:
-                StarSignInputView(selectedSign: $inputText) {
+                StarSignInputView(selectedSign: $inputText, onSignSelected: {
                     generateAudioFromInputs()
-                }
+                }, onBackTapped: {
+                    currentScreen = .buttonSelection
+                })
             case .voiceMemos:
                 VoiceMemosView(
                     selectedButton: selectedButton,
@@ -1260,32 +1268,144 @@ struct ButtonSelectionView: View {
 struct TextInputView: View {
     @Binding var inputText: String
     let onTextEntered: () -> Void
+    let onBackTapped: () -> Void
     @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         ZStack {
-            Image("backgroundImage") // Replace "backgroundImage" with your image name
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .ignoresSafeArea(.all, edges: .all)
+            // Modern gradient background matching app theme
+            LinearGradient(
+                colors: [
+                    Color.black,
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                Spacer()
-                
-                TextField("Enter text here...", text: $inputText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .font(.system(size: 18))
-                    .padding(.horizontal, 20)
-                    .focused($isTextFieldFocused)
-                    .onSubmit {
-                        onTextEntered()
+            VStack(spacing: 0) {
+                // Back Button - Fixed at top left
+                HStack {
+                    Button(action: onBackTapped) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
                     }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                // Header Section
+                VStack(spacing: 16) {
+                    Text("Custom Input")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("Enter your custom text or idea")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 40)
+                Spacer()
+                
+                // Text Input Section
+                VStack(spacing: 24) {
+                    // Custom styled text field
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your Text")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        ZStack(alignment: .topLeading) {
+                            // Background
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.white.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                )
+                            
+                            // Text Editor for multiline input
+                            TextField("Enter your text here...", text: $inputText)
+                                .font(.system(size: 18, weight: .regular))
+                                .foregroundColor(.white)
+                                .padding(16)
+                                .focused($isTextFieldFocused)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        onTextEntered()
+                                    }
+                                }
+                        }
+                        .frame(minHeight: 120)
+                    }
+                    
+                    // Generate Button
+                    Button(action: {
+                        if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            onTextEntered()
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 18, weight: .medium))
+                            
+                            Text("Generate Voice Memo")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color(.systemBlue),
+                                    Color(.systemPurple)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(16)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                    }
+                    .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1.0)
+                }
+                .padding(.horizontal, 32)
                 
                 Spacer()
+                
+                // Helper Text
+                Text("Enter any topic, story, or idea you'd like converted to audio")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 40)
             }
         }
         .onAppear {
+            // Focus immediately when view appears
             isTextFieldFocused = true
+        }
+        .onTapGesture {
+            // Keep keyboard focused - don't dismiss on tap
+            if !isTextFieldFocused {
+                isTextFieldFocused = true
+            }
         }
     }
 }
@@ -1298,6 +1418,7 @@ struct TextInputView: View {
 struct CardInputView: View {
     @Binding var selectedCard: String
     let onCardSelected: () -> Void
+    let onBackTapped: () -> Void
     
     let cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
     let suits = ["♠", "♥", "♦", "♣"]
@@ -1318,9 +1439,29 @@ struct CardInputView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                // Header
-                VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // Back Button - Fixed at top left
+                HStack {
+                    Button(action: onBackTapped) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                // Header Section
+                VStack(spacing: 16) {
                     Text("Select a Card")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.white)
@@ -1329,7 +1470,7 @@ struct CardInputView: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                 }
-                .padding(.top, 60)
+                .padding(.top, 40)
                 
                 // Card Values Section
                 VStack(spacing: 16) {
@@ -1477,6 +1618,7 @@ struct CardInputView: View {
 struct NumberInputView: View {
     @Binding var selectedNumber: String
     let onNumberSelected: () -> Void
+    let onBackTapped: () -> Void
     
     @State private var tensDigit: String = ""
     @State private var onesDigit: String = ""
@@ -1496,9 +1638,29 @@ struct NumberInputView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                // Header
-                VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // Back Button - Fixed at top left
+                HStack {
+                    Button(action: onBackTapped) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                // Header Section
+                VStack(spacing: 16) {
                     Text("Select a Number")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.white)
@@ -1507,7 +1669,7 @@ struct NumberInputView: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                 }
-                .padding(.top, 60)
+                .padding(.top, 40)
                 
                 // Tens Digit Section
                 VStack(spacing: 16) {
@@ -1629,6 +1791,7 @@ struct NumberInputView: View {
 struct StarSignInputView: View {
     @Binding var selectedSign: String
     let onSignSelected: () -> Void
+    let onBackTapped: () -> Void
     
     let starSigns = [
         ("♈", "Aries"), ("♉", "Taurus"), ("♊", "Gemini"),
@@ -1652,9 +1815,29 @@ struct StarSignInputView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                // Header
-                VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // Back Button - Fixed at top left
+                HStack {
+                    Button(action: onBackTapped) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 17, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                // Header Section
+                VStack(spacing: 16) {
                     Text("Select a Star Sign")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.white)
@@ -1663,7 +1846,7 @@ struct StarSignInputView: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                 }
-                .padding(.top, 60)
+                .padding(.top, 40)
                 
                 // Star Signs Grid
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
