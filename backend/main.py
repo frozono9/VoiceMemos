@@ -857,11 +857,25 @@ def update_settings():
 def logout():
     """Endpoint to log out the current user and set loggedIn to false"""
     try:
+        user_id = g.current_user['_id']
+        username = g.current_user.get('username', 'unknown')
+        
+        print(f"Attempting to log out user: {username} (ID: {user_id})")
+        
         # Set loggedIn to False for the current user
-        users_collection.update_one(
-            {"_id": g.current_user['_id']}, 
+        result = users_collection.update_one(
+            {"_id": user_id}, 
             {"$set": {"loggedIn": False}}
         )
+        
+        print(f"Update result - matched: {result.matched_count}, modified: {result.modified_count}")
+        
+        # Verify the update worked
+        updated_user = users_collection.find_one({"_id": user_id})
+        if updated_user:
+            print(f"User {username} loggedIn status after update: {updated_user.get('loggedIn', 'NOT_SET')}")
+        else:
+            print(f"Warning: Could not find user {username} after logout update")
         
         return jsonify({"message": "Logged out successfully"}), 200
     except Exception as e:
