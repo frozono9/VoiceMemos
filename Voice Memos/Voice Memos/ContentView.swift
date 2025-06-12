@@ -524,11 +524,11 @@ struct HomeScreenView: View {
                                 }
                                 
                                 HStack {
-                                    Text("\(usage.usedCharacters)/\(usage.totalLimit)")
+                                    Text("\(Int(Double(usage.usedCharacters) / Double(usage.totalLimit) * 100))%")
                                         .font(.system(size: 24, weight: .bold))
                                         .foregroundColor(.white)
                                     
-                                    Text("characters")
+                                    Text("tokens used")
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.white.opacity(0.7))
                                     
@@ -537,7 +537,7 @@ struct HomeScreenView: View {
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text("\(usage.remainingCharacters) left")
                                             .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.green)
+                                            .foregroundColor(usage.usedCharacters >= usage.totalLimit ? .red : .green)
                                         
                                         Text("Resets in \(usage.daysUntilReset) days")
                                             .font(.system(size: 11, weight: .regular))
