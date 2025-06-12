@@ -369,7 +369,7 @@ You suddenly remembered a weird dream, or had a strange passing thought, and you
 2. **Tone**: Awake, calm, and casual — like you're talking to yourself or a friend in the morning.  
 3. **Value inclusion**: The value **({value})** should be mentioned naturally by name, not forced.  
 4. **Topic as subtext**: Do **NOT** mention the topic **({topic})** — but let it guide the general mood or situation.  
-5. **Length**: One or two short sentences — max 15 seconds to read aloud and 200 characters long.  
+5. **Length**: One or two short sentences — max 15 seconds to read aloud.  
 6. **Emotion**: Curious, chill, or a bit puzzled — no drama or exaggeration. Think: “I just remembered something odd.”
 
 ────────  STYLE TIPS  ────────
