@@ -44,6 +44,10 @@ else:
 # Define Gemini model name
 GOOGLE_MODEL_NAME = "gemini-2.0-flash" # Updated to a common model, ensure this is intended
 
+# ElevenLabs model configuration
+ELEVENLABS_DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+ELEVENLABS_TURBO_MODEL = os.getenv("ELEVENLABS_TURBO_MODEL", "eleven_turbo_v2_5")
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB límite para archivos grandes
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "your-super-secret-jwt-key-fallback") # Added JWT Secret Key
@@ -115,6 +119,29 @@ headers = {
 # Variable global para almacenar el ID de la voz de Alex Latorre
 ALEX_LATORRE_VOICE_ID = None
 
+def get_available_models():
+    """Get available TTS models from ElevenLabs"""
+    try:
+        models_resp = requests.get("https://api.elevenlabs.io/v1/models", headers=headers)
+        models_resp.raise_for_status()
+        models_data = models_resp.json()
+        
+        print("Available ElevenLabs models:")
+        for model in models_data.get('models', []):
+            model_id = model.get('model_id', 'unknown')
+            name = model.get('name', 'Unknown')
+            description = model.get('description', 'No description')
+            print(f"  - ID: {model_id}, Name: {name}")
+            print(f"    Description: {description}")
+        
+        return models_data.get('models', [])
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching models from ElevenLabs: {e}")
+        return []
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching models: {e}")
+        return []
+
 def get_alex_latorre_voice_id():
     """Obtiene el voice_id de 'Alex Latorre' de Eleven Labs."""
     global ALEX_LATORRE_VOICE_ID
@@ -148,6 +175,13 @@ def get_alex_latorre_voice_id():
 # Esto se ejecutará una vez cuando el servidor Flask comience.
 ALEX_LATORRE_VOICE_ID = get_alex_latorre_voice_id()
 
+# Also get available models on startup
+print("\n" + "="*50)
+print("ELEVENLABS MODELS INFORMATION")
+print("="*50)
+available_models = get_available_models()
+print("="*50 + "\n")
+
 def verify_api_key():
     """Verify that the API key is valid by making a test request to Eleven Labs"""
     try:
@@ -169,6 +203,15 @@ def verify_api():
         return jsonify({"status": "success", "message": "API key is valid"})
     else:
         return jsonify({"status": "error", "message": "API key is invalid"}), 401
+
+@app.route('/models', methods=['GET'])
+def get_models():
+    """Endpoint to get available ElevenLabs models"""
+    models = get_available_models()
+    if models:
+        return jsonify({"models": models}), 200
+    else:
+        return jsonify({"error": "Failed to fetch models"}), 500
 
 def _is_likely_inappropriate(text):
     """Check if text contains potentially inappropriate content"""
@@ -361,8 +404,31 @@ Return only the voice note in {user_language}, no additional text, labels, or fo
         print(f"Texto generado ({user_language}): {generated_text}")
 
         tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use)
+        
+        # ElevenLabs model selection - choose the model that best fits your needs
+        # Available models (as of 2024):
+        # - "eleven_multilingual_v2" (default) - Best for multiple languages, high quality
+        # - "eleven_turbo_v2" - Faster generation, good quality, lower latency
+        # - "eleven_turbo_v2_5" - Latest turbo model with improvements
+        # - "eleven_monolingual_v1" - English only, high quality
+        # - "eleven_multilingual_v1" - Older multilingual model
+        
+        # ElevenLabs model selection - choose the model that best fits your needs
+        # Available models (as of 2024):
+        # - "eleven_multilingual_v2" (default) - Best for multiple languages, high quality
+        # - "eleven_turbo_v2" - Faster generation, good quality, lower latency
+        # - "eleven_turbo_v2_5" - Latest turbo model with improvements
+        # - "eleven_monolingual_v1" - English only, high quality
+        # - "eleven_multilingual_v1" - Older multilingual model
+        
+        # Always use Eleven Turbo v2.5 model
+        model_id = ELEVENLABS_TURBO_MODEL  # Always use turbo model for fast generation
+        
+        print(f"Using ElevenLabs model: {model_id} (Eleven Turbo v2.5) for language: {user_language}")
+        
         json_payload = {
             "text": generated_text,
+            "model_id": model_id,  # Add model selection
             "voice_settings": {
                 "stability": stability_val,
                 "similarity_boost": similarity_boost_val
