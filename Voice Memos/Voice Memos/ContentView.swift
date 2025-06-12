@@ -466,6 +466,8 @@ struct HomeScreenView: View {
     
     @State private var characterUsage: CharacterUsage?
     @State private var isLoadingUsage: Bool = false
+    @State private var showingCharacterLimitAlert: Bool = false
+    @State private var characterLimitErrorMessage: String = ""
 
     var body: some View {
         GeometryReader { geometry in
@@ -592,7 +594,7 @@ struct HomeScreenView: View {
                     // Main Action Section
                     VStack(spacing: 24) {
                         // Primary Perform Button
-                        Button(action: onPerformTapped) {
+                        Button(action: handlePerformTapped) {
                             HStack(spacing: 16) {
                                 Image(systemName: "waveform.path.ecg")
                                     .font(.system(size: 24, weight: .medium))
@@ -775,6 +777,13 @@ struct HomeScreenView: View {
                 await fetchCharacterUsage()
             }
         }
+        .alert("Character Limit Warning", isPresented: $showingCharacterLimitAlert) {
+            Button("OK") {
+                showingCharacterLimitAlert = false
+            }
+        } message: {
+            Text(characterLimitErrorMessage)
+        }
     }
     
     private func fetchCharacterUsage() async {
@@ -790,6 +799,27 @@ struct HomeScreenView: View {
             await MainActor.run {
                 self.isLoadingUsage = false
             }
+        }
+    }
+    
+    // Function to handle Perform button with character limit validation
+    private func handlePerformTapped() {
+        guard let usage = characterUsage else {
+            // If we don't have usage data yet, allow the action (fallback)
+            onPerformTapped()
+            return
+        }
+
+        // Check if user is in the warning zone (9,800 - 10,000 characters)
+        if usage.usedCharacters >= 9800 && usage.usedCharacters < 10000 {
+            characterLimitErrorMessage = "You are approaching your monthly limit (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Please note that generating new content may exceed your limit."
+            showingCharacterLimitAlert = true
+        } else if usage.usedCharacters >= 10000 {
+            characterLimitErrorMessage = "Monthly character limit exceeded (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Your limit will reset on the 1st of next month."
+            showingCharacterLimitAlert = true
+        } else {
+            // Under 14,800 characters - proceed normally
+            onPerformTapped()
         }
     }
     
