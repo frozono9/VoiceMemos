@@ -634,6 +634,79 @@ def verify_activation_code_endpoint():
 
     return jsonify({"valid": True, "message": "Activation code is valid"}), 200
 
+# Add endpoint for forgot password functionality
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Endpoint to reset user password using email and activation code"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    email = data.get('email')
+    activation_code_str = data.get('activation_code')
+    new_password = data.get('new_password')
+
+    if not all([email, activation_code_str, new_password]):
+        return jsonify({"error": "Missing email, activation_code, or new_password"}), 400
+
+    if not is_valid_email(email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters long"}), 400
+
+    try:
+        # Validate activation code
+        activation_code = activation_codes_collection.find_one({"code": activation_code_str})
+        if not activation_code:
+            return jsonify({"error": "Invalid activation code"}), 400
+        
+        # Check if activation code was already used for password reset
+        if activation_code.get("used_for_password_reset"):
+            return jsonify({"error": "Activation code has already been used for password reset"}), 400
+
+        # Find user by email
+        user = users_collection.find_one({"email": email})
+        if not user:
+            return jsonify({"error": "No user found with this email address"}), 404
+
+        # Hash the new password
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        
+        # Update user password and set loggedIn to False (logout from all devices)
+        result = users_collection.update_one(
+            {"_id": user['_id']}, 
+            {
+                "$set": {
+                    "password": hashed_password,
+                    "loggedIn": False  # Force logout from all devices
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            return jsonify({"error": "Failed to update password"}), 500
+
+        # Mark activation code as used for password reset
+        activation_codes_collection.update_one(
+            {"_id": activation_code['_id']},
+            {
+                "$set": {
+                    "used_for_password_reset": True,
+                    "password_reset_by": user['_id'],
+                    "password_reset_at": datetime.utcnow()
+                }
+            }
+        )
+
+        print(f"Password reset successful for user: {user.get('username')} ({email})")
+        return jsonify({"message": "Password reset successful. Please log in with your new password."}), 200
+
+    except Exception as e:
+        print(f"Error during password reset: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Password reset failed due to a server error"}), 500
+
 # Endpoint to generate a voice clone from user audio
 @app.route('/generate-voice-clone', methods=['POST'])
 @token_required

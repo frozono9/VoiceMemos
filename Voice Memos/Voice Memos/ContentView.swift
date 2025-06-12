@@ -171,6 +171,7 @@ enum AppScreen {
     case tutorial // Added tutorial screen case
     case createAccount // Added for user registration
     case login // Added for user login
+    case forgotPassword // Added for forgot password functionality
 }
 
 // MARK: - ContentView
@@ -211,6 +212,14 @@ struct ContentView: View {
                     currentScreen = .home // Navigate to home after login
                 }, onGoToCreateAccount: {
                     currentScreen = .createAccount
+                }, onForgotPassword: {
+                    currentScreen = .forgotPassword
+                })
+            case .forgotPassword:
+                ForgotPasswordView(authManager: authManager, onPasswordReset: {
+                    currentScreen = .login // Navigate back to login after successful reset
+                }, onBackToLogin: {
+                    currentScreen = .login
                 })
             case .buttonSelection:
                 ButtonSelectionView(selectedButton: $selectedButton, onButtonSelected: { screen in
@@ -299,6 +308,8 @@ struct ContentView: View {
                         currentScreen = .home
                     }, onGoToCreateAccount: {
                         currentScreen = .createAccount
+                    }, onForgotPassword: {
+                        currentScreen = .forgotPassword
                     })
                 }
             case .tutorial: // Handle tutorial screen
@@ -3920,6 +3931,7 @@ struct LoginView: View {
     @ObservedObject var authManager: AuthManager
     let onLoggedIn: () -> Void
     let onGoToCreateAccount: () -> Void
+    let onForgotPassword: () -> Void
 
     @State private var emailOrUsername = ""
     @State private var password = ""
@@ -4060,6 +4072,15 @@ struct LoginView: View {
                                         .foregroundColor(.white)
                                 }
                             }
+                            
+                            // Forgot Password Link
+                            Button(action: onForgotPassword) {
+                                Text("Forgot Password?")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .underline()
+                            }
+                            .padding(.top, 8)
                         }
                         .padding(.horizontal, 32)
                         
@@ -4087,6 +4108,250 @@ struct LoginView: View {
                     onLoggedIn()
                 } else {
                     errorMessage = authManager.errorMessage ?? "Login failed."
+                }
+            }
+        }
+    }
+}
+
+struct ForgotPasswordView: View {
+    @ObservedObject var authManager: AuthManager
+    let onPasswordReset: () -> Void
+    let onBackToLogin: () -> Void
+
+    @State private var email = ""
+    @State private var activationCode = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+    @State private var isLoading = false
+    @FocusState private var focusedField: ForgotPasswordField?
+    
+    enum ForgotPasswordField: Hashable {
+        case email, activationCode, newPassword, confirmPassword
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Premium gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemOrange).opacity(0.8),
+                        Color(.systemRed).opacity(0.7),
+                        Color(.systemPink).opacity(0.9)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 32) {
+                        Spacer(minLength: 60)
+                        
+                        // Header Section
+                        VStack(spacing: 20) {
+                            // App Icon
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 100, height: 100)
+                                    .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+                                
+                                Image(systemName: "key.fill")
+                                    .font(.system(size: 50, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [.white, .white.opacity(0.8)]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Reset Password")
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                
+                                Text("Enter your email and activation code to reset your password")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Form Section
+                        VStack(spacing: 20) {
+                            // Email Field
+                            AuthTextField(
+                                title: "Email",
+                                text: $email,
+                                icon: "envelope.fill",
+                                keyboardType: .emailAddress,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .email)
+                            
+                            // Activation Code Field
+                            AuthTextField(
+                                title: "Activation Code",
+                                text: $activationCode,
+                                icon: "key.fill",
+                                keyboardType: .default,
+                                isSecure: false
+                            )
+                            .focused($focusedField, equals: .activationCode)
+                            
+                            // New Password Field
+                            AuthTextField(
+                                title: "New Password",
+                                text: $newPassword,
+                                icon: "lock.fill",
+                                keyboardType: .default,
+                                isSecure: true
+                            )
+                            .focused($focusedField, equals: .newPassword)
+                            
+                            // Confirm Password Field
+                            AuthTextField(
+                                title: "Confirm Password",
+                                text: $confirmPassword,
+                                icon: "lock.fill",
+                                keyboardType: .default,
+                                isSecure: true
+                            )
+                            .focused($focusedField, equals: .confirmPassword)
+                            
+                            // Error Message
+                            if let error = errorMessage {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                    Text(error)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.red)
+                                }
+                                .padding(16)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            
+                            // Success Message
+                            if let success = successMessage {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text(success)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.green)
+                                }
+                                .padding(16)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        // Action Buttons
+                        VStack(spacing: 16) {
+                            // Reset Password Button
+                            Button(action: resetPassword) {
+                                HStack(spacing: 12) {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Text("Reset Password")
+                                            .font(.system(size: 18, weight: .semibold))
+                                        
+                                        Image(systemName: "arrow.right.circle.fill")
+                                            .font(.system(size: 18))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(.ultraThickMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            .disabled(isLoading || email.isEmpty || activationCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
+                            .opacity((isLoading || email.isEmpty || activationCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty) ? 0.6 : 1.0)
+                            
+                            // Back to Login Link
+                            Button(action: onBackToLogin) {
+                                Text("Back to Login")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .underline()
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        Spacer(minLength: 60)
+                    }
+                }
+            }
+        }
+        .navigationBarHidden(true)
+        .onTapGesture {
+            focusedField = nil
+        }
+    }
+
+    func resetPassword() {
+        // Validate inputs
+        guard !email.isEmpty else {
+            errorMessage = "Please enter your email address."
+            return
+        }
+        
+        guard !activationCode.isEmpty else {
+            errorMessage = "Please enter your activation code."
+            return
+        }
+        
+        guard !newPassword.isEmpty else {
+            errorMessage = "Please enter a new password."
+            return
+        }
+        
+        guard newPassword.count >= 6 else {
+            errorMessage = "Password must be at least 6 characters long."
+            return
+        }
+        
+        guard newPassword == confirmPassword else {
+            errorMessage = "Passwords do not match."
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        successMessage = nil
+        focusedField = nil
+        
+        Task {
+            let success = await authManager.resetPassword(
+                email: email,
+                activationCode: activationCode,
+                newPassword: newPassword
+            )
+            await MainActor.run {
+                isLoading = false
+                if success {
+                    successMessage = "Password reset successful! Redirecting to login..."
+                    // Auto-navigate to login after 2 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        onPasswordReset()
+                    }
+                } else {
+                    errorMessage = authManager.errorMessage ?? "Password reset failed."
                 }
             }
         }
@@ -4304,6 +4569,68 @@ class AuthManager: ObservableObject {
             print("Detailed network error in login: \(error)")
             self.errorMessage = "Network request failed: \(error.localizedDescription). Details: \(error)" // FIX: Use errorMessage
             isLoading = false
+            return false
+        }
+    }
+    
+    func resetPassword(email: String, activationCode: String, newPassword: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/reset-password") else {
+            print("Invalid URL for password reset")
+            DispatchQueue.main.async {
+                self.errorMessage = "Invalid URL for password reset."
+                self.showError = true
+            }
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "email": email,
+            "activation_code": activationCode,
+            "new_password": newPassword
+        ]
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            print("Detailed encoding error in resetPassword: \(error)")
+            self.errorMessage = "Failed to encode request: \(error.localizedDescription)"
+            return false
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                self.errorMessage = "Invalid response from server."
+                return false
+            }
+            
+            let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+            print("Reset Password Response Status: \(httpResponse.statusCode)")
+            print("Reset Password Response Body: \(responseBody)")
+
+            if httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    self.errorMessage = nil // Clear error on success
+                    self.showError = false
+                }
+                return true
+            } else {
+                if let json = try? JSONDecoder().decode([String: String].self, from: data),
+                   let message = json["error"] ?? json["message"] {
+                    self.errorMessage = message
+                } else {
+                    self.errorMessage = "Password reset failed. Status: \(httpResponse.statusCode). Details: \(responseBody)"
+                }
+                return false
+            }
+        } catch {
+            print("Detailed network error in resetPassword: \(error)")
+            self.errorMessage = "Network request failed: \(error.localizedDescription)"
             return false
         }
     }
