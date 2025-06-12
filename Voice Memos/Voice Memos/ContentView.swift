@@ -4309,11 +4309,53 @@ class AuthManager: ObservableObject {
     }
     
     func logout() {
+        // Call backend logout endpoint to update loggedIn status in MongoDB
+        Task {
+            await callBackendLogout()
+        }
+        
+        // Clear local authentication state
         self.authToken = nil
         self.isAuthenticated = false
         deleteTokenFromKeychain() // Remove persisted token
         DispatchQueue.main.async {
             self.currentUser = nil // Clear current user data on logout
+        }
+    }
+    
+    private func callBackendLogout() async {
+        guard let token = self.authToken else {
+            print("AuthManager: No auth token available for logout.")
+            return
+        }
+        
+        guard let url = URL(string: "\(baseURL)/logout") else {
+            print("AuthManager: Invalid URL for logout endpoint.")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("AuthManager: Logout response status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 200 {
+                    print("AuthManager: Successfully logged out on backend.")
+                } else {
+                    print("AuthManager: Backend logout failed with status: \(httpResponse.statusCode)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("AuthManager: Logout error response: \(responseString)")
+                    }
+                }
+            }
+        } catch {
+            print("AuthManager: Network error during logout: \(error.localizedDescription)")
         }
     }
 
