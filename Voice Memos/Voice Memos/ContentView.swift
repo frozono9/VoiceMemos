@@ -4321,10 +4321,10 @@ struct ForgotPasswordView: View {
             return
         }
         
-        guard newPassword.count >= 6 else {
-            errorMessage = "Password must be at least 6 characters long."
-            return
-        }
+        // guard newPassword.count >= 6 else {
+        //     errorMessage = "Password must be at least 6 characters long."
+        //     return
+        // }
         
         guard newPassword == confirmPassword else {
             errorMessage = "Passwords do not match."
