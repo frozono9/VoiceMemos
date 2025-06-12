@@ -4309,17 +4309,17 @@ class AuthManager: ObservableObject {
     }
     
     func logout() {
-        // Call backend logout endpoint to update loggedIn status in MongoDB
+        // Call backend logout endpoint FIRST (while we still have the token)
         Task {
             await callBackendLogout()
-        }
-        
-        // Clear local authentication state
-        self.authToken = nil
-        self.isAuthenticated = false
-        deleteTokenFromKeychain() // Remove persisted token
-        DispatchQueue.main.async {
-            self.currentUser = nil // Clear current user data on logout
+            
+            // Then clear local authentication state on the main thread
+            await MainActor.run {
+                self.authToken = nil
+                self.isAuthenticated = false
+                self.deleteTokenFromKeychain() // Remove persisted token
+                self.currentUser = nil // Clear current user data on logout
+            }
         }
     }
     
