@@ -510,7 +510,8 @@ def register():
         "created_at": datetime.utcnow(),
         "settings": default_settings, # Add default settings
         "voice_clone_id": None, # Initialize voice_clone_id
-        "voice_ids": [] # Initialize voice_ids list for multiple cloned voices
+        "voice_ids": [], # Initialize voice_ids list for multiple cloned voices
+        "loggedIn": False # Initialize as not logged in
     }
     
     try:
@@ -542,7 +543,11 @@ def login():
     user = users_collection.find_one({"$or": [{"email": email_or_username}, {"username": email_or_username}]})
 
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-        # Password matches, generate JWT
+        # Check if user is already logged in
+        if user.get('loggedIn', False):
+            return jsonify({"error": "User is already logged in from another device. Please sign out from the other device first."}), 409
+        
+        # Password matches and user is not logged in elsewhere, generate JWT
         token_payload = {
             'user_id': str(user['_id']),
             'username': user['username'],
@@ -550,6 +555,13 @@ def login():
         }
         try:
             token = jwt.encode(token_payload, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+            
+            # Set loggedIn to True
+            users_collection.update_one(
+                {"_id": user['_id']}, 
+                {"$set": {"loggedIn": True}}
+            )
+            
             return jsonify({"message": "Login successful", "token": token}), 200
         except Exception as e:
             print(f"Error generating token: {e}")
@@ -839,6 +851,23 @@ def update_settings():
         print(f"Error updating settings: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to update settings due to a server error"}), 500
+
+@app.route('/logout', methods=['POST'])
+@token_required
+def logout():
+    """Endpoint to log out the current user and set loggedIn to false"""
+    try:
+        # Set loggedIn to False for the current user
+        users_collection.update_one(
+            {"_id": g.current_user['_id']}, 
+            {"$set": {"loggedIn": False}}
+        )
+        
+        return jsonify({"message": "Logged out successfully"}), 200
+    except Exception as e:
+        print(f"Error during logout: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to log out due to a server error"}), 500
 
 # Configuration for CORS and next endpoints ... existing code ...
 @app.after_request
