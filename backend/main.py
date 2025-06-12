@@ -127,19 +127,43 @@ def get_available_models():
         models_data = models_resp.json()
         
         print("Available ElevenLabs models:")
-        for model in models_data.get('models', []):
-            model_id = model.get('model_id', 'unknown')
-            name = model.get('name', 'Unknown')
-            description = model.get('description', 'No description')
-            print(f"  - ID: {model_id}, Name: {name}")
-            print(f"    Description: {description}")
+        print(f"Raw response type: {type(models_data)}")
+        print(f"Raw response: {models_data}")
         
-        return models_data.get('models', [])
+        # Handle different response formats
+        models_list = []
+        if isinstance(models_data, list):
+            models_list = models_data
+        elif isinstance(models_data, dict):
+            # Try different possible keys where models might be stored
+            if 'models' in models_data:
+                models_list = models_data['models']
+            elif 'data' in models_data:
+                models_list = models_data['data']
+            else:
+                # If it's a dict but doesn't have expected keys, treat the whole dict as the model info
+                models_list = [models_data]
+        else:
+            print(f"Unexpected models response format: {type(models_data)}")
+            return []
+        
+        for model in models_list:
+            if isinstance(model, dict):
+                model_id = model.get('model_id', model.get('id', 'unknown'))
+                name = model.get('name', 'Unknown')
+                description = model.get('description', 'No description')
+                print(f"  - ID: {model_id}, Name: {name}")
+                print(f"    Description: {description}")
+            else:
+                print(f"  - Unexpected model format: {model}")
+        
+        return models_list
     except requests.exceptions.RequestException as e:
         print(f"Error fetching models from ElevenLabs: {e}")
         return []
     except Exception as e:
         print(f"An unexpected error occurred while fetching models: {e}")
+        traceback.print_exc()
         return []
 
 def get_alex_latorre_voice_id():
@@ -153,14 +177,35 @@ def get_alex_latorre_voice_id():
         voices_resp.raise_for_status()
         voices_data = voices_resp.json()
         
+        # First try to find 'Alex Latorre' (exact match)
         for voice in voices_data.get('voices', []):
-            if voice.get('name', '').lower() == 'alex latorre': # Case-insensitive comparison
+            if voice.get('name', '').lower() == 'alex latorre':
                 ALEX_LATORRE_VOICE_ID = voice.get('voice_id')
                 print(f"Found voice 'Alex Latorre' with ID: {ALEX_LATORRE_VOICE_ID}")
                 return ALEX_LATORRE_VOICE_ID
         
-        print("ERROR: Voice 'Alex Latorre' not found in your ElevenLabs account.")
-        print("Available voices:")
+        # If not found, try to find 'alexlatorre_en' (cloned voice) - use the first one
+        for voice in voices_data.get('voices', []):
+            if voice.get('name', '').lower() == 'alexlatorre_en':
+                ALEX_LATORRE_VOICE_ID = voice.get('voice_id')
+                print(f"Found cloned voice 'alexlatorre_en' with ID: {ALEX_LATORRE_VOICE_ID}")
+                return ALEX_LATORRE_VOICE_ID
+        
+        # If still not found, use the first cloned voice available (excluding 'default')
+        for voice in voices_data.get('voices', []):
+            if voice.get('category') == 'cloned' and voice.get('name', '').lower() != 'default':
+                ALEX_LATORRE_VOICE_ID = voice.get('voice_id')
+                print(f"Using first available cloned voice '{voice.get('name')}' with ID: {ALEX_LATORRE_VOICE_ID}")
+                return ALEX_LATORRE_VOICE_ID
+        
+        # Last resort: use any cloned voice including default
+        for voice in voices_data.get('voices', []):
+            if voice.get('category') == 'cloned':
+                ALEX_LATORRE_VOICE_ID = voice.get('voice_id')
+                print(f"Using fallback cloned voice '{voice.get('name')}' with ID: {ALEX_LATORRE_VOICE_ID}")
+                return ALEX_LATORRE_VOICE_ID
+        
+        print("ERROR: No cloned voice found. Available voices:")
         for voice in voices_data.get('voices', []):
             print(f"  - Name: {voice.get('name')}, ID: {voice.get('voice_id')}, Category: {voice.get('category')}")
         return None
@@ -860,7 +905,15 @@ def logout():
         user_id = g.current_user['_id']
         username = g.current_user.get('username', 'unknown')
         
-        print(f"Attempting to log out user: {username} (ID: {user_id})")
+        print(f"[LOGOUT DEBUG] Attempting to log out user: {username} (ID: {user_id})")
+        print(f"[LOGOUT DEBUG] User ID type: {type(user_id)}")
+        
+        # Check current loggedIn status before update
+        current_user = users_collection.find_one({"_id": user_id})
+        if current_user:
+            print(f"[LOGOUT DEBUG] Current loggedIn status before update: {current_user.get('loggedIn', 'NOT_SET')}")
+        else:
+            print(f"[LOGOUT DEBUG] WARNING: Could not find user {username} before logout update")
         
         # Set loggedIn to False for the current user
         result = users_collection.update_one(
@@ -868,20 +921,90 @@ def logout():
             {"$set": {"loggedIn": False}}
         )
         
-        print(f"Update result - matched: {result.matched_count}, modified: {result.modified_count}")
+        print(f"[LOGOUT DEBUG] MongoDB update result - matched: {result.matched_count}, modified: {result.modified_count}")
         
         # Verify the update worked
         updated_user = users_collection.find_one({"_id": user_id})
         if updated_user:
-            print(f"User {username} loggedIn status after update: {updated_user.get('loggedIn', 'NOT_SET')}")
+            print(f"[LOGOUT DEBUG] User {username} loggedIn status after update: {updated_user.get('loggedIn', 'NOT_SET')}")
+            
+            # Extra verification - check if the field exists and its type
+            if 'loggedIn' in updated_user:
+                print(f"[LOGOUT DEBUG] loggedIn field type: {type(updated_user['loggedIn'])}, value: {repr(updated_user['loggedIn'])}")
+            else:
+                print(f"[LOGOUT DEBUG] WARNING: loggedIn field not found in user document after update")
         else:
-            print(f"Warning: Could not find user {username} after logout update")
+            print(f"[LOGOUT DEBUG] ERROR: Could not find user {username} after logout update")
         
         return jsonify({"message": "Logged out successfully"}), 200
     except Exception as e:
-        print(f"Error during logout: {e}")
+        print(f"[LOGOUT DEBUG] Error during logout: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to log out due to a server error"}), 500
+
+# Debug endpoint to check and fix user login status
+@app.route('/debug-user-status', methods=['GET'])
+@token_required  
+def debug_user_status():
+    """Debug endpoint to check current user login status"""
+    try:
+        user_id = g.current_user['_id']
+        username = g.current_user.get('username', 'unknown')
+        
+        user = users_collection.find_one({"_id": user_id})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        logged_in_status = user.get('loggedIn', 'NOT_SET')
+        
+        return jsonify({
+            "username": username,
+            "user_id": str(user_id),
+            "loggedIn_status": logged_in_status,
+            "loggedIn_type": str(type(logged_in_status)),
+            "message": "User status retrieved successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in debug endpoint: {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"Debug endpoint failed: {str(e)}"}), 500
+
+# Debug endpoint to manually set user login status to false
+@app.route('/force-logout', methods=['POST'])
+@token_required
+def force_logout():
+    """Force logout endpoint to manually set loggedIn to false"""
+    try:
+        user_id = g.current_user['_id']
+        username = g.current_user.get('username', 'unknown')
+        
+        print(f"[FORCE LOGOUT] Forcing logout for user: {username} (ID: {user_id})")
+        
+        # Force set loggedIn to False
+        result = users_collection.update_one(
+            {"_id": user_id}, 
+            {"$set": {"loggedIn": False}}
+        )
+        
+        print(f"[FORCE LOGOUT] Update result - matched: {result.matched_count}, modified: {result.modified_count}")
+        
+        # Verify the update
+        updated_user = users_collection.find_one({"_id": user_id})
+        if updated_user:
+            print(f"[FORCE LOGOUT] Final loggedIn status: {updated_user.get('loggedIn', 'NOT_SET')}")
+        
+        return jsonify({
+            "message": "Force logout completed", 
+            "matched": result.matched_count,
+            "modified": result.modified_count,
+            "final_status": updated_user.get('loggedIn', 'NOT_SET') if updated_user else 'USER_NOT_FOUND'
+        }), 200
+        
+    except Exception as e:
+        print(f"[FORCE LOGOUT] Error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"Force logout failed: {str(e)}"}), 500
 
 # Configuration for CORS and next endpoints ... existing code ...
 @app.after_request
