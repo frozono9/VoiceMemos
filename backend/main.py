@@ -263,18 +263,18 @@ def _generate_thought_text(prompt, topic, value, language="english"): # Added la
                     if hasattr(candidate.content.parts[0], 'text'):
                         generated_text = candidate.content.parts[0].text.strip()
             
-            if generated_text:
-                # Ensure the generated text starts with the correct phrase if not already present
-                # This might be redundant if Gemini correctly follows the prompt, but acts as a safeguard.
-                if not generated_text.lower().startswith(start_phrase.lower()):
-                     # Check if a similar starting phrase in the target language is present
-                    if language.lower().startswith("es") and not (generated_text.lower().startswith("bueno, pues") or generated_text.lower().startswith("a ver")):
-                         generated_text = f"{start_phrase} {generated_text}"
-                    elif not language.lower().startswith("es"): # For English and others if not starting correctly
-                         generated_text = f"{start_phrase} {generated_text}"
-                return generated_text
-            else:
-                print("Gemini response did not contain usable text. Using fallback.")
+            # if generated_text:
+            #     # Ensure the generated text starts with the correct phrase if not already present
+            #     # This might be redundant if Gemini correctly follows the prompt, but acts as a safeguard.
+            #     if not generated_text.lower().startswith(start_phrase.lower()):
+            #          # Check if a similar starting phrase in the target language is present
+            #         if language.lower().startswith("es") and not (generated_text.lower().startswith("bueno, pues") or generated_text.lower().startswith("a ver")):
+            #              generated_text = f"{start_phrase} {generated_text}"
+            #         elif not language.lower().startswith("es"): # For English and others if not starting correctly
+            #              generated_text = f"{start_phrase} {generated_text}"
+            #     return generated_text
+            # else:
+            #     print("Gemini response did not contain usable text. Using fallback.")
         
         except (ImportError, NameError, AttributeError) as sdk_err:
             print(f"Google AI SDK error or not available: {str(sdk_err)}. Falling back to REST API or general fallback.")
@@ -372,15 +372,15 @@ def generate_audio():
             # Construct the safe_prompt with language instructions for Gemini
             safe_prompt = f"""
 ──────────  ROLE  ──────────
-You are a fully awake person who just got ready for the day — you’ve showered, maybe had coffee — and you're recording a quick, casual voice note in {user_language}.  
+You are a fully awake person who just got ready for the day — and you're recording a quick, casual voice note in {user_language}.  
 You suddenly remembered a weird dream, or had a strange passing thought, and you want to say it out loud before you forget.
 
 ────────  MUST‑HAVES  ────────
 1. **Language**: The entire note must be in {user_language}.  
 2. **Tone**: Awake, calm, and casual — like you're talking to yourself or a friend in the morning.  
-3. **Value inclusion**: The value **({value})** should be mentioned naturally, not forced.  
+3. **Value inclusion**: The value **({value})** should be mentioned naturally by name, not forced.  
 4. **Topic as subtext**: Do **NOT** mention the topic **({topic})** — but let it guide the general mood or situation.  
-5. **Length**: One or two short sentences — max 15 seconds to read aloud.  
+5. **Length**: One or two short sentences — max 15 seconds to read aloud and 200 characters long.  
 6. **Emotion**: Curious, chill, or a bit puzzled — no drama or exaggeration. Think: “I just remembered something odd.”
 
 ────────  STYLE TIPS  ────────
