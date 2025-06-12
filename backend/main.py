@@ -398,6 +398,31 @@ def generate_audio():
             prompt_start_phrase = "Okay, entonces..." # Or "Bueno, pues..." or "A ver..."
             inappropriate_fallback_text = "Esta mañana me desperté pensando en lo interesante que es la magia y cómo puede sorprender a la gente."
 
+        # Check monthly character limit (15,000 characters)
+        MONTHLY_CHAR_LIMIT = 15000
+        current_user_char_count = g.current_user.get("charCount", 0)
+        last_reset = g.current_user.get("lastCharReset")
+        
+        # Check if we need to reset monthly count (if it's a new month)
+        now = datetime.utcnow()
+        if last_reset:
+            last_reset_date = last_reset if isinstance(last_reset, datetime) else datetime.fromisoformat(last_reset.replace('Z', '+00:00'))
+            # Reset if it's a new month
+            if now.month != last_reset_date.month or now.year != last_reset_date.year:
+                current_user_char_count = 0
+                # Update user's character count and reset date
+                users_collection.update_one(
+                    {"_id": g.current_user['_id']}, 
+                    {"$set": {"charCount": 0, "lastCharReset": now}}
+                )
+                print(f"Reset character count for user {g.current_user.get('username')} - new month detected")
+        
+        # Check if user has exceeded monthly limit
+        if current_user_char_count >= MONTHLY_CHAR_LIMIT:
+            return jsonify({
+                "error": f"Monthly character limit of {MONTHLY_CHAR_LIMIT} characters exceeded. Used: {current_user_char_count}. Your limit will reset on the 1st of next month."
+            }), 429 # Too Many Requests
+
 
         if _is_likely_inappropriate(topic) or _is_likely_inappropriate(value):
             generated_text = inappropriate_fallback_text
@@ -436,6 +461,18 @@ Return only the voice note in {user_language}, no additional text, labels, or fo
             generated_text = _generate_thought_text(safe_prompt, topic, value, user_language)
 
         print(f"Texto generado ({user_language}): {generated_text}")
+
+        # Count characters in generated text and update user's character count
+        generated_char_count = len(generated_text)
+        new_total_count = current_user_char_count + generated_char_count
+        
+        # Update user's character count in database
+        users_collection.update_one(
+            {"_id": g.current_user['_id']}, 
+            {"$set": {"charCount": new_total_count}}
+        )
+        
+        print(f"Character usage - User: {g.current_user.get('username')}, This generation: {generated_char_count}, Total this month: {new_total_count}/{MONTHLY_CHAR_LIMIT}")
 
         tts_url = ELEVEN_TTS_URL_TEMPLATE.format(voice_id=voice_id_to_use)
         
@@ -556,7 +593,9 @@ def register():
         "settings": default_settings, # Add default settings
         "voice_clone_id": None, # Initialize voice_clone_id
         "voice_ids": [], # Initialize voice_ids list for multiple cloned voices
-        "loggedIn": False # Initialize as not logged in
+        "loggedIn": False, # Initialize as not logged in
+        "charCount": 0, # Initialize character count for monthly limits
+        "lastCharReset": datetime.utcnow() # Track when character count was last reset
     }
     
     try:
@@ -854,6 +893,75 @@ def me():
         "voice_clone_id": user.get("voice_clone_id"), # Keep this for compatibility if needed
         "voice_ids": user.get("voice_ids", []) # Ensure this is directly from user doc
     }), 200
+
+@app.route('/character-usage', methods=['GET'])
+@token_required
+def get_character_usage():
+    """Get user's character usage information"""
+    user = g.current_user
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Constants
+    MONTHLY_CHAR_LIMIT = 15000
+    current_char_count = user.get("charCount", 0)
+    last_reset = user.get("lastCharReset")
+    
+    # Check if we need to reset monthly count (if it's a new month)
+    now = datetime.utcnow()
+    if last_reset:
+        last_reset_date = last_reset if isinstance(last_reset, datetime) else datetime.fromisoformat(last_reset.replace('Z', '+00:00'))
+        # Reset if it's a new month
+        if now.month != last_reset_date.month or now.year != last_reset_date.year:
+            current_char_count = 0
+            # Update user's character count and reset date
+            users_collection.update_one(
+                {"_id": user['_id']}, 
+                {"$set": {"charCount": 0, "lastCharReset": now}}
+            )
+            print(f"Reset character count for user {user.get('username')} - new month detected")
+    
+    # Calculate days until next reset (first of next month)
+    next_month = now.replace(day=1) + timedelta(days=32)  # Go to next month
+    next_reset = next_month.replace(day=1)  # First day of next month
+    days_until_reset = (next_reset - now).days
+    
+    return jsonify({
+        "used_characters": current_char_count,
+        "total_limit": MONTHLY_CHAR_LIMIT,
+        "remaining_characters": max(0, MONTHLY_CHAR_LIMIT - current_char_count),
+        "days_until_reset": days_until_reset,
+        "last_reset": last_reset.isoformat() if last_reset else None,
+        "next_reset": next_reset.isoformat()
+    }), 200
+
+@app.route('/admin/reset-all-character-counts', methods=['POST'])
+@token_required
+def reset_all_character_counts():
+    """Admin endpoint to reset all users' character counts (for monthly reset)"""
+    user = g.current_user
+    
+    # Only allow admin users (you can modify this logic as needed)
+    if user.get('username') != 'alexlatorre':
+        return jsonify({"error": "Admin access required"}), 403
+    
+    try:
+        # Reset all users' character counts
+        now = datetime.utcnow()
+        result = users_collection.update_many(
+            {},  # Update all users
+            {"$set": {"charCount": 0, "lastCharReset": now}}
+        )
+        
+        print(f"Reset character counts for {result.modified_count} users")
+        return jsonify({
+            "message": f"Successfully reset character counts for {result.modified_count} users",
+            "reset_date": now.isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"Error resetting character counts: {e}")
+        return jsonify({"error": "Failed to reset character counts"}), 500
 
 @app.route('/delete-voice-clone', methods=['DELETE'])
 @token_required

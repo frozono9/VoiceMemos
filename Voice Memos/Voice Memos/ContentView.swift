@@ -281,6 +281,7 @@ struct ContentView: View {
                     NavigationView { // Added NavigationView
                         HomeScreenView(
                             authManager: authManager, // Pass authManager to HomeScreenView
+                            apiManager: apiManager, // Pass apiManager to HomeScreenView
                             onPerformTapped: {
                                 // Reset flow-specific states for a fresh "Perform" flow
                                 self.selectedButton = ""
@@ -457,10 +458,14 @@ struct ContentView: View {
 
 struct HomeScreenView: View {
     @ObservedObject var authManager: AuthManager // Added AuthManager
+    @ObservedObject var apiManager: VoiceAPIManager // Added to fetch character usage
     let onPerformTapped: () -> Void
     let onSettingsTapped: () -> Void
     let onTutorialTapped: () -> Void
     let onSignOutTapped: () -> Void // Added for sign-out
+    
+    @State private var characterUsage: CharacterUsage?
+    @State private var isLoadingUsage: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -502,6 +507,83 @@ struct HomeScreenView: View {
                             .font(.system(size: 18, weight: .medium, design: .default))
                             .foregroundColor(.white.opacity(0.7))
                             .multilineTextAlignment(.center)
+                        
+                        // Character Usage Card
+                        if let usage = characterUsage {
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Image(systemName: "textformat")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.blue)
+                                    
+                                    Text("Monthly Token Usage")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                }
+                                
+                                HStack {
+                                    Text("\(usage.usedCharacters)/\(usage.totalLimit)")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("characters")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(usage.remainingCharacters) left")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.green)
+                                        
+                                        Text("Resets in \(usage.daysUntilReset) days")
+                                            .font(.system(size: 11, weight: .regular))
+                                            .foregroundColor(.white.opacity(0.6))
+                                    }
+                                }
+                                
+                                // Progress bar
+                                GeometryReader { geometry in
+                                    ZStack(alignment: .leading) {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.2))
+                                            .frame(height: 4)
+                                            .cornerRadius(2)
+                                        
+                                        Rectangle()
+                                            .fill(usage.usedCharacters >= usage.totalLimit ? Color.red : Color.blue)
+                                            .frame(width: max(0, geometry.size.width * Double(usage.usedCharacters) / Double(usage.totalLimit)), height: 4)
+                                            .cornerRadius(2)
+                                    }
+                                }
+                                .frame(height: 4)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    )
+                            )
+                            .padding(.horizontal, 32)
+                            .padding(.top, 16)
+                        } else if isLoadingUsage {
+                            HStack {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                                
+                                Text("Loading usage...")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding(.top, 16)
+                        }
                     }
                     .padding(.horizontal, 32)
                     
@@ -685,6 +767,28 @@ struct HomeScreenView: View {
                     .padding(.horizontal, 32)
                     .padding(.bottom, 32)
                 }
+            }
+        }
+        .onAppear {
+            // Fetch character usage when the home screen appears
+            Task {
+                await fetchCharacterUsage()
+            }
+        }
+    }
+    
+    private func fetchCharacterUsage() async {
+        isLoadingUsage = true
+        do {
+            let usage = try await apiManager.fetchCharacterUsage()
+            await MainActor.run {
+                self.characterUsage = usage
+                self.isLoadingUsage = false
+            }
+        } catch {
+            print("Failed to fetch character usage: \(error.localizedDescription)")
+            await MainActor.run {
+                self.isLoadingUsage = false
             }
         }
     }
@@ -2734,6 +2838,52 @@ class VoiceAPIManager: ObservableObject {
             self.isLoading = false
         }
     }
+    
+    // MARK: - Character Usage Management
+    
+    func fetchCharacterUsage() async throws -> CharacterUsage {
+        guard let token = authManager.authToken else {
+            throw NetworkError.authenticationRequired
+        }
+        
+        guard let url = URL(string: "\(baseURL)/character-usage") else {
+            throw NetworkError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.invalidResponse
+            }
+            
+            if httpResponse.statusCode == 401 {
+                throw NetworkError.unauthorized
+            }
+            
+            if httpResponse.statusCode != 200 {
+                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    let errorMessage = errorResponse.error ?? errorResponse.message ?? "Unknown server error"
+                    throw NetworkError.serverError(message: errorMessage)
+                } else {
+                    let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+                    throw NetworkError.serverError(message: "Server error: \(responseBody)")
+                }
+            }
+            
+            let characterUsage = try JSONDecoder().decode(CharacterUsage.self, from: data)
+            return characterUsage
+            
+        } catch let error as NetworkError {
+            throw error
+        } catch {
+            throw NetworkError.unknown(message: error.localizedDescription)
+        }
+    }
 }
 
 // Add ErrorResponse struct for decoding server error messages if they are JSON
@@ -2768,6 +2918,25 @@ struct User: Codable, Identifiable {
         case settings
         case voiceCloneId = "voice_clone_id" // Map voice_clone_id from backend
         case voiceIds = "voice_ids" // Map voice_ids from backend
+    }
+}
+
+// Character usage response structure
+struct CharacterUsage: Codable {
+    let usedCharacters: Int
+    let totalLimit: Int
+    let remainingCharacters: Int
+    let daysUntilReset: Int
+    let lastReset: String?
+    let nextReset: String
+    
+    enum CodingKeys: String, CodingKey {
+        case usedCharacters = "used_characters"
+        case totalLimit = "total_limit"
+        case remainingCharacters = "remaining_characters"
+        case daysUntilReset = "days_until_reset"
+        case lastReset = "last_reset"
+        case nextReset = "next_reset"
     }
 }
 
