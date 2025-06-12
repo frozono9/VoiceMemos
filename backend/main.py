@@ -652,8 +652,8 @@ def reset_password():
     if not is_valid_email(email):
         return jsonify({"error": "Invalid email format"}), 400
 
-    if len(new_password) < 6:
-        return jsonify({"error": "Password must be at least 6 characters long"}), 400
+    # if len(new_password) < 6:
+    #     return jsonify({"error": "Password must be at least 6 characters long"}), 400
 
     try:
         # Validate activation code
