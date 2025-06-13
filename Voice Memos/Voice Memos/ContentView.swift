@@ -468,6 +468,7 @@ struct HomeScreenView: View {
     @State private var isLoadingUsage: Bool = false
     @State private var showingCharacterLimitAlert: Bool = false
     @State private var characterLimitErrorMessage: String = ""
+    @State private var showingUsageDetail: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -504,88 +505,39 @@ struct HomeScreenView: View {
                         }
                         .padding(.top, 60)
                         
+                        // Minimal Token Usage Display at the top
+                        if let usage = characterUsage {
+                            Button(action: {
+                                showingUsageDetail = true
+                            }) {
+                                Text("\(usage.usedCharacters)/\(usage.totalLimit)")
+                                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.white.opacity(0.1))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .padding(.top, 8)
+                        } else if isLoadingUsage {
+                            Text("•••/••••")
+                                .font(.system(size: 16, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.4))
+                                .padding(.top, 8)
+                        }
+                        
                         // Subtitle
                         Text("Visions by Alex Latorre and Nicolas Rosales")
                             .font(.system(size: 18, weight: .medium, design: .default))
                             .foregroundColor(.white.opacity(0.7))
                             .multilineTextAlignment(.center)
-                        
-                        // Character Usage Card
-                        if let usage = characterUsage {
-                            VStack(spacing: 8) {
-                                HStack {
-                                    Image(systemName: "textformat")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.blue)
-                                    
-                                    Text("Monthly Token Usage")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(.white)
-                                    
-                                    Spacer()
-                                }
-                                
-                                HStack {
-                                    Text("\(Int(Double(usage.usedCharacters) / Double(usage.totalLimit) * 100))%")
-                                        .font(.system(size: 24, weight: .bold))
-                                        .foregroundColor(.white)
-                                    
-                                    Text("tokens used")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.7))
-                                    
-                                    Spacer()
-                                    
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("\(usage.remainingCharacters) left")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(usage.usedCharacters >= usage.totalLimit ? .red : .green)
-                                        
-                                        Text("Resets in \(usage.daysUntilReset) days")
-                                            .font(.system(size: 11, weight: .regular))
-                                            .foregroundColor(.white.opacity(0.6))
-                                    }
-                                }
-                                
-                                // Progress bar
-                                GeometryReader { geometry in
-                                    ZStack(alignment: .leading) {
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.2))
-                                            .frame(height: 4)
-                                            .cornerRadius(2)
-                                        
-                                        Rectangle()
-                                            .fill(usage.usedCharacters >= usage.totalLimit ? Color.red : Color.blue)
-                                            .frame(width: max(0, geometry.size.width * Double(usage.usedCharacters) / Double(usage.totalLimit)), height: 4)
-                                            .cornerRadius(2)
-                                    }
-                                }
-                                .frame(height: 4)
-                            }
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                    )
-                            )
-                            .padding(.horizontal, 32)
                             .padding(.top, 16)
-                        } else if isLoadingUsage {
-                            HStack {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                                
-                                Text("Loading usage...")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                            .padding(.top, 16)
-                        }
                     }
                     .padding(.horizontal, 32)
                     
@@ -783,6 +735,11 @@ struct HomeScreenView: View {
             }
         } message: {
             Text(characterLimitErrorMessage)
+        }
+        .sheet(isPresented: $showingUsageDetail) {
+            if let usage = characterUsage {
+                TokenUsageDetailView(usage: usage)
+            }
         }
     }
     
@@ -5595,6 +5552,195 @@ class AVDelegate: NSObject, AVAudioPlayerDelegate {
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         onFinishPlaying?() // Call the closure instead of setting isPlaying directly
+    }
+}
+
+// MARK: - Token Usage Detail View
+
+struct TokenUsageDetailView: View {
+    let usage: CharacterUsage
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Background gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.05, green: 0.05, blue: 0.1),
+                        Color.black
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Header with large usage display
+                        VStack(spacing: 16) {
+                            Text("Token Usage")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.white)
+                            
+                            VStack(spacing: 8) {
+                                Text("\(usage.usedCharacters)")
+                                    .font(.system(size: 48, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                
+                                Text("of \(usage.totalLimit) tokens used")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            
+                            // Percentage display
+                            Text("\(Int(Double(usage.usedCharacters) / Double(usage.totalLimit) * 100))%")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundColor(usage.usedCharacters >= usage.totalLimit ? .red : .blue)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.white.opacity(0.1))
+                                )
+                        }
+                        .padding(.top, 20)
+                        
+                        // Progress bar
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Progress")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                                Spacer()
+                            }
+                            
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.2))
+                                        .frame(height: 8)
+                                        .cornerRadius(4)
+                                    
+                                    Rectangle()
+                                        .fill(usage.usedCharacters >= usage.totalLimit ? Color.red : Color.blue)
+                                        .frame(width: max(0, geometry.size.width * Double(usage.usedCharacters) / Double(usage.totalLimit)), height: 8)
+                                        .cornerRadius(4)
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Usage details cards
+                        VStack(spacing: 16) {
+                            // Remaining tokens card
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Remaining")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    
+                                    Text("\(usage.remainingCharacters)")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(usage.usedCharacters >= usage.totalLimit ? .red : .green)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "clock.badge.checkmark")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(usage.usedCharacters >= usage.totalLimit ? .red : .green)
+                            }
+                            .padding(20)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    )
+                            )
+                            
+                            // Reset date card
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Resets In")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    
+                                    Text("\(usage.daysUntilReset) days")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.white)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "calendar.badge.clock")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
+                            .padding(20)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Contact support button
+                        Button(action: {
+                            // Open email client or contact method
+                            if let url = URL(string: "mailto:support@visions.app?subject=Token%20Usage%20Question") {
+                                UIApplication.shared.open(url)
+                            }
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "envelope.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                Text("Contact Support")
+                                    .font(.system(size: 17, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.0, green: 0.48, blue: 1.0),
+                                        Color(red: 0.0, green: 0.38, blue: 0.9)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(12)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 32)
+                    }
+                }
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
