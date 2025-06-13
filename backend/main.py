@@ -398,7 +398,7 @@ def generate_audio():
             prompt_start_phrase = "Okay, entonces..." # Or "Bueno, pues..." or "A ver..."
             inappropriate_fallback_text = "Esta mañana me desperté pensando en lo interesante que es la magia y cómo puede sorprender a la gente."
 
-        # Check monthly character limit (15,000 characters)
+        # Check monthly character limit (5,000 characters)
         MONTHLY_CHAR_LIMIT = 5000
         current_user_char_count = g.current_user.get("charCount", 0)
         last_reset = g.current_user.get("lastCharReset")
@@ -463,7 +463,7 @@ Return only the voice note in {user_language}, no additional text, labels, or fo
         print(f"Texto generado ({user_language}): {generated_text}")
 
         # Count characters in generated text and update user's character count
-        generated_char_count = len(generated_text)
+        generated_char_count = (len(generated_text))//2
         new_total_count = current_user_char_count + generated_char_count
         
         # Update user's character count in database
