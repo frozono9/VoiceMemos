@@ -510,34 +510,53 @@ struct HomeScreenView: View {
                             Button(action: {
                                 showingUsageDetail = true
                             }) {
-                                Text("\(usage.usedCharacters)/\(usage.totalLimit)")
-                                    .font(.system(size: 16, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
+                                Text("\(usage.usedCharacters) / \(usage.totalLimit)")
+                                    .font(.system(size: 16, weight: .semibold, design: .default))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.white.opacity(0.1))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                        .ultraThinMaterial,
+                                        in: RoundedRectangle(cornerRadius: 20)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color.white.opacity(0.3),
+                                                        Color.white.opacity(0.1)
+                                                    ],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 0.5
                                             )
                                     )
                             }
-                            .padding(.top, 8)
+                            .buttonStyle(PlainButtonStyle())
+                            .scaleEffect(1.0)
+                            .animation(.easeInOut(duration: 0.1), value: 1.0)
+                            .padding(.top, 12)
                         } else if isLoadingUsage {
                             Text("•••/••••")
-                                .font(.system(size: 16, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.4))
-                                .padding(.top, 8)
+                                .font(.system(size: 16, weight: .semibold, design: .default))
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(
+                                    .ultraThinMaterial,
+                                    in: RoundedRectangle(cornerRadius: 20)
+                                )
+                                .padding(.top, 12)
                         }
                         
-                        // Subtitle
-                        Text("Visions by Alex Latorre and Nicolas Rosales")
-                            .font(.system(size: 18, weight: .medium, design: .default))
-                            .foregroundColor(.white.opacity(0.7))
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 16)
+                    //     // Subtitle
+                    //     Text("Visions by Alex Latorre and Nicolas Rosales")
+                    //         .font(.system(size: 18, weight: .medium, design: .default))
+                    //         .foregroundColor(.white.opacity(0.7))
+                    //         .multilineTextAlignment(.center)
+                    //         .padding(.top, 16)
                     }
                     .padding(.horizontal, 32)
                     
@@ -769,7 +788,7 @@ struct HomeScreenView: View {
 
         // Check if user is in the warning zone (9,800 - 10,000 characters)
         if usage.usedCharacters >= 4800 && usage.usedCharacters < 5000 {
-            characterLimitErrorMessage = "You are approaching your monthly limit (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Please note that generating new content may exceed your limit."
+            characterLimitErrorMessage = "You are approaching your monthly limit (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Please contact us if you need more credits."
             showingCharacterLimitAlert = true
         } else if usage.usedCharacters >= 5000 {
             characterLimitErrorMessage = "Monthly character limit exceeded (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Your limit will reset on the 1st of next month."
@@ -804,15 +823,14 @@ struct TutorialView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Premium gradient background
+                // Clean dark background matching homescreen
                 LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBlue).opacity(0.1),
-                        Color(.systemPurple).opacity(0.05),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    colors: [
+                        Color(red: 0.05, green: 0.05, blue: 0.1),
+                        Color.black
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
                 
@@ -820,43 +838,19 @@ struct TutorialView: View {
                     VStack(spacing: 32) {
                         // Header Section
                         VStack(spacing: 16) {
-                            // App Icon with glow effect
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(.systemBlue).opacity(0.2),
-                                                Color(.systemPurple).opacity(0.1)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 80, height: 80)
-                                
-                                Image(systemName: "waveform.circle.fill")
-                                    .font(.system(size: 40, weight: .medium))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(.systemBlue),
-                                                Color(.systemPurple)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            }
+                            // Simple app icon
+                            Image(systemName: "waveform.circle.fill")
+                                .font(.system(size: 40, weight: .medium))
+                                .foregroundColor(.white)
                             
                             VStack(spacing: 8) {
                                 Text("Visions")
                                     .font(.system(size: 32, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                 
                                 Text("Transform your ideas into intelligent voice memos")
                                     .font(.system(size: 17, weight: .medium))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.white.opacity(0.7))
                                     .multilineTextAlignment(.center)
                             }
                         }
@@ -866,21 +860,21 @@ struct TutorialView: View {
                         VStack(spacing: 16) {
                             FeatureCard(
                                 icon: "brain.head.profile",
-                                iconColor: Color(.systemBlue),
+                                iconColor: .white,
                                 title: "AI-Powered Generation",
                                 description: "Create voice memos on any topic using advanced AI technology"
                             )
                             
                             FeatureCard(
                                 icon: "person.wave.2.fill",
-                                iconColor: Color(.systemPurple),
+                                iconColor: .white,
                                 title: "Voice Cloning",
                                 description: "Use your own voice or choose from premium AI voices"
                             )
                             
                             FeatureCard(
                                 icon: "text.bubble.fill",
-                                iconColor: Color(.systemGreen),
+                                iconColor: .white,
                                 title: "Smart Content",
                                 description: "Generate contextual content for cards, movies, stories, and more"
                             )
@@ -891,11 +885,11 @@ struct TutorialView: View {
                             HStack {
                                 Image(systemName: "lightbulb.fill")
                                     .font(.system(size: 20, weight: .medium))
-                                    .foregroundColor(Color(.systemYellow))
+                                    .foregroundColor(.white)
                                 
                                 Text("How It Works")
                                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                             }
                             .padding(.horizontal, 24)
                             
@@ -935,11 +929,11 @@ struct TutorialView: View {
                             HStack {
                                 Image(systemName: "star.fill")
                                     .font(.system(size: 20, weight: .medium))
-                                    .foregroundColor(Color(.systemOrange))
+                                    .foregroundColor(.white)
                                 
                                 Text("Pro Tips")
                                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                             }
                             .padding(.horizontal, 24)
                             
@@ -973,18 +967,12 @@ struct TutorialView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color(.systemBlue),
-                                        Color(.systemPurple)
-                                    ]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: Color(.systemBlue).opacity(0.3), radius: 8, x: 0, y: 4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 32)
@@ -1016,24 +1004,19 @@ struct FeatureCard: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.15))
-                    .frame(width: 48, height: 48)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(iconColor)
-            }
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(iconColor)
+                .frame(width: 32)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 
                 Text(description)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
                     .multilineTextAlignment(.leading)
             }
             
@@ -1042,7 +1025,10 @@ struct FeatureCard: View {
         .padding(20)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -1054,38 +1040,35 @@ struct StepCard: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            // Step number with gradient
+            // Step number with simple circle
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color(.systemBlue),
-                                Color(.systemPurple)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(.ultraThinMaterial)
                     .frame(width: 36, height: 36)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
                 
                 Text("\(number)")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
-            };                VStack(alignment: .leading, spacing: 4) {
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color(.systemBlue))
+                        .foregroundColor(.white)
                     
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                 }
                 
                 Text(description)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
                     .multilineTextAlignment(.leading)
             }
             
@@ -1094,7 +1077,10 @@ struct StepCard: View {
         .padding(16)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -1106,12 +1092,12 @@ struct TipCard: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Color(.systemOrange))
+                .foregroundColor(.white)
                 .frame(width: 24)
             
             Text(text)
                 .font(.system(size: 15, weight: .regular))
-                .foregroundColor(.primary)
+                .foregroundColor(.white.opacity(0.8))
                 .multilineTextAlignment(.leading)
             
             Spacer()
@@ -1119,7 +1105,10 @@ struct TipCard: View {
         .padding(16)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -3113,15 +3102,14 @@ struct EditScreenView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Premium gradient background
+                // Clean dark background matching homescreen
                 LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBlue).opacity(0.2),
-                        Color(.systemPurple).opacity(0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    colors: [
+                        Color(red: 0.05, green: 0.05, blue: 0.1),
+                        Color.black
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
                 
@@ -3129,43 +3117,19 @@ struct EditScreenView: View {
                     VStack(spacing: 32) {
                         // Header Section
                         VStack(spacing: 16) {
-                            // Settings Icon with glow effect
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(.systemBlue).opacity(0.3),
-                                                Color(.systemPurple).opacity(0.2)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 80, height: 80)
-                                
-                                Image(systemName: "gearshape.fill")
-                                    .font(.system(size: 40, weight: .medium))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(.systemBlue),
-                                                Color(.systemPurple)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            }
+                            // Simple settings icon
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 40, weight: .medium))
+                                .foregroundColor(.white)
                             
                             VStack(spacing: 8) {
                                 Text("Settings")
                                     .font(.system(size: 32, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                 
                                 Text("Customize your AI voice experience")
                                     .font(.system(size: 17, weight: .medium))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.white.opacity(0.7))
                                     .multilineTextAlignment(.center)
                             }
                         }
@@ -3175,7 +3139,7 @@ struct EditScreenView: View {
                         SettingsSection(
                             title: "Voice generation language",
                             icon: "globe.americas.fill",
-                            iconColor: Color(.systemGreen)
+                            iconColor: .white
                         ) {
                             LanguageSelectionCard(apiManager: apiManager)
                         }
@@ -3184,7 +3148,7 @@ struct EditScreenView: View {
                         SettingsSection(
                             title: "Voice Quality",
                             icon: "waveform",
-                            iconColor: Color(.systemBlue)
+                            iconColor: .white
                         ) {
                             VStack(spacing: 20) {
                                 SliderCard(
@@ -3211,7 +3175,7 @@ struct EditScreenView: View {
                         SettingsSection(
                             title: "Audio Enhancement",
                             icon: "speaker.wave.3.fill",
-                            iconColor: Color(.systemOrange)
+                            iconColor: .white
                         ) {
                             VStack(spacing: 20) {
                                 ToggleCard(
@@ -3240,7 +3204,7 @@ struct EditScreenView: View {
                         SettingsSection(
                             title: "Voice Cloning",
                             icon: "person.wave.2.fill",
-                            iconColor: Color(.systemPurple)
+                            iconColor: .white
                         ) {
                             VoiceCloneCard(showVoiceCloneSheet: $showVoiceCloneSheet)
                         }
@@ -3269,18 +3233,12 @@ struct EditScreenView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color(.systemBlue),
-                                        Color(.systemPurple)
-                                    ]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: Color(.systemBlue).opacity(0.3), radius: 8, x: 0, y: 4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
                         }
                         .disabled(apiManager.isLoading)
                         .padding(.horizontal, 24)
@@ -3350,7 +3308,7 @@ struct SettingsSection<Content: View>: View {
                 
                 Text(title)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
             }
             .padding(.horizontal, 24)
             
@@ -3381,29 +3339,32 @@ struct LanguageSelectionCard: View {
             HStack(spacing: 16) {
                 Image(systemName: "globe.americas.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color(.systemGreen))
+                    .foregroundColor(.white)
                     .frame(width: 32)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Language")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     Text(apiManager.language.displayName)
                         .font(.system(size: 15, weight: .regular))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 
                 Spacer()
                 
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
             }
             .padding(20)
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
     }
 }
@@ -3421,44 +3382,47 @@ struct SliderCard: View {
             HStack(spacing: 16) {
                 Image(systemName: icon)
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color(.systemBlue))
+                    .foregroundColor(.white)
                     .frame(width: 32)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     Text(subtitle)
                         .font(.system(size: 15, weight: .regular))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 
                 Spacer()
                 
                 Text("\(Int(value * 100))%")
                     .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                     .frame(width: 50, alignment: .trailing)
             }
             
             HStack(spacing: 12) {
                 Text("\(Int(range.lowerBound * 100))%")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
                 
                 Slider(value: $value, in: range, step: step)
-                    .accentColor(Color(.systemBlue))
+                    .accentColor(.white)
                 
                 Text("\(Int(range.upperBound * 100))%")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
             }
         }
         .padding(20)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -3472,17 +3436,17 @@ struct ToggleCard: View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundColor(Color(.systemOrange))
+                .foregroundColor(.white)
                 .frame(width: 32)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 
                 Text(subtitle)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
             }
             
             Spacer()
@@ -3494,7 +3458,10 @@ struct ToggleCard: View {
         .padding(20)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -3508,29 +3475,32 @@ struct VoiceCloneCard: View {
             HStack(spacing: 16) {
                 Image(systemName: "person.wave.2.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color(.systemPurple))
+                    .foregroundColor(.white)
                     .frame(width: 32)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Manage Voice Clone")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     Text("Record, test, or replace your AI voice")
                         .font(.system(size: 15, weight: .regular))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 
                 Spacer()
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
             }
             .padding(20)
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -5609,7 +5579,7 @@ struct TokenUsageDetailView: View {
                         // Progress bar
                         VStack(spacing: 12) {
                             HStack {
-                                Text("Progress")
+                                Text("Usage")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.white.opacity(0.9))
                                 Spacer()
