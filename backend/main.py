@@ -399,7 +399,7 @@ def generate_audio():
             inappropriate_fallback_text = "Esta mañana me desperté pensando en lo interesante que es la magia y cómo puede sorprender a la gente."
 
         # Check monthly character limit (15,000 characters)
-        MONTHLY_CHAR_LIMIT = 10000
+        MONTHLY_CHAR_LIMIT = 5000
         current_user_char_count = g.current_user.get("charCount", 0)
         last_reset = g.current_user.get("lastCharReset")
         
@@ -903,7 +903,7 @@ def get_character_usage():
         return jsonify({"error": "User not found"}), 404
 
     # Constants
-    MONTHLY_CHAR_LIMIT = 10000
+    MONTHLY_CHAR_LIMIT = 5000
     current_char_count = user.get("charCount", 0)
     last_reset = user.get("lastCharReset")
     

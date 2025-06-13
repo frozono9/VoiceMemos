@@ -811,10 +811,10 @@ struct HomeScreenView: View {
         }
 
         // Check if user is in the warning zone (9,800 - 10,000 characters)
-        if usage.usedCharacters >= 9800 && usage.usedCharacters < 10000 {
+        if usage.usedCharacters >= 4800 && usage.usedCharacters < 5000 {
             characterLimitErrorMessage = "You are approaching your monthly limit (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Please note that generating new content may exceed your limit."
             showingCharacterLimitAlert = true
-        } else if usage.usedCharacters >= 10000 {
+        } else if usage.usedCharacters >= 5000 {
             characterLimitErrorMessage = "Monthly character limit exceeded (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Your limit will reset on the 1st of next month."
             showingCharacterLimitAlert = true
         } else {
