@@ -188,6 +188,7 @@ struct ContentView: View {
     @StateObject private var apiManager: VoiceAPIManager
     
     @State private var generationError: String? = nil // Added for error display
+    @State private var showVoiceCloneDirectly = false // Added to control voice clone navigation
 
     @MainActor // ADDED @MainActor
     init() {
@@ -267,13 +268,10 @@ struct ContentView: View {
                     EditScreenView(
                         apiManager: apiManager,
                         onBackTapped: { // MODIFIED: No longer receives RecordingData
-                            // OLD:
-                            // if let newRecordingFromEditScreen = newRecordingFromEditScreen {
-                            //     // Log that audio was generated but is not directly used in the main flow from here
-                            //     print("ContentView: EditScreenView returned with new recording: \\(newRecordingFromEditScreen.title), duration: \\(newRecordingFromEditScreen.duration). This is not used when returning to Home from Settings.")
-                            // }
+                            // Reset the voice clone direct flag when returning
+                            showVoiceCloneDirectly = false
                             currentScreen = .home // New: Always return to home
-                        }
+                        }, showVoiceCloneDirectly: showVoiceCloneDirectly
                     )
                 }
             case .home: // Handle home screen
@@ -290,6 +288,7 @@ struct ContentView: View {
                                 currentScreen = .buttonSelection
                             },
                             onSettingsTapped: {
+                                showVoiceCloneDirectly = false // Normal settings navigation
                                 currentScreen = .editScreen
                             },
                             onTutorialTapped: {
@@ -298,6 +297,10 @@ struct ContentView: View {
                             onSignOutTapped: {
                                 // authManager.logout() is called within HomeScreenView's button action
                                 currentScreen = .login // Navigate to login screen
+                            },
+                            onVoiceCloneSettingsTapped: {
+                                showVoiceCloneDirectly = true // Show voice clone directly
+                                currentScreen = .editScreen
                             }
                         )
                         Spacer()
@@ -463,12 +466,14 @@ struct HomeScreenView: View {
     let onSettingsTapped: () -> Void
     let onTutorialTapped: () -> Void
     let onSignOutTapped: () -> Void // Added for sign-out
+    let onVoiceCloneSettingsTapped: () -> Void // Added for voice clone navigation
     
     @State private var characterUsage: CharacterUsage?
     @State private var isLoadingUsage: Bool = false
     @State private var showingCharacterLimitAlert: Bool = false
     @State private var characterLimitErrorMessage: String = ""
     @State private var showingUsageDetail: Bool = false
+    @State private var showingVoiceCloneAlert: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -760,6 +765,14 @@ struct HomeScreenView: View {
                 TokenUsageDetailView(usage: usage)
             }
         }
+        .alert("Voice Clone Required", isPresented: $showingVoiceCloneAlert) {
+            Button("Go to Voice Cloning") {
+                onVoiceCloneSettingsTapped() // Navigate to voice clone settings
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Voice Clone not generated. Go to settings and create it to start generating voice memos.")
+        }
     }
     
     private func fetchCharacterUsage() async {
@@ -780,13 +793,28 @@ struct HomeScreenView: View {
     
     // Function to handle Perform button with character limit validation
     private func handlePerformTapped() {
+        // First check if user has a voice clone
+        guard let currentUser = authManager.currentUser else {
+            showingVoiceCloneAlert = true
+            return
+        }
+        
+        // Check if user has voice clone ID or voice IDs
+        let hasVoiceClone = (currentUser.voiceCloneId != nil && !currentUser.voiceCloneId!.isEmpty) ||
+                           (currentUser.voiceIds != nil && !currentUser.voiceIds!.isEmpty)
+        
+        if !hasVoiceClone {
+            showingVoiceCloneAlert = true
+            return
+        }
+        
         guard let usage = characterUsage else {
             // If we don't have usage data yet, allow the action (fallback)
             onPerformTapped()
             return
         }
 
-        // Check if user is in the warning zone (9,800 - 10,000 characters)
+        // Check if user is in the warning zone (4,800 - 5,000 characters)
         if usage.usedCharacters >= 4800 && usage.usedCharacters < 5000 {
             characterLimitErrorMessage = "You are approaching your monthly limit (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Please contact us if you need more credits."
             showingCharacterLimitAlert = true
@@ -794,7 +822,7 @@ struct HomeScreenView: View {
             characterLimitErrorMessage = "Monthly character limit exceeded (\(usage.usedCharacters)/\(usage.totalLimit) characters used). Your limit will reset on the 1st of next month."
             showingCharacterLimitAlert = true
         } else {
-            // Under 14,800 characters - proceed normally
+            // Under 4,800 characters and has voice clone - proceed normally
             onPerformTapped()
         }
     }
@@ -3094,6 +3122,7 @@ class AudioManager: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudio
 struct EditScreenView: View {
     @ObservedObject var apiManager: VoiceAPIManager
     let onBackTapped: () -> Void
+    let showVoiceCloneDirectly: Bool // New parameter to show voice clone sheet immediately
     
     @State private var showVoiceCloneSheet = false
     @State private var showSaveConfirmation = false
@@ -3265,6 +3294,13 @@ struct EditScreenView: View {
                 apiManager.loadSettingsFromAuth()
             }
             apiManager.errorMessage = nil
+            
+            // Show voice clone sheet directly if requested
+            if showVoiceCloneDirectly {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showVoiceCloneSheet = true
+                }
+            }
         }
         .onReceive(apiManager.authManager.$currentUser) { user in
             // React to changes in current user data

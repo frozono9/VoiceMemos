@@ -18,6 +18,36 @@
             endingLineNumber = "56"
             landmarkName = "encode(to:)"
             landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "7376403A-9538-40B5-88D5-F6DF2954E8DC - d690a71e83a10ee3"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "Visions.AnyCodable.encode(to: Swift.Encoder) throws -&gt; ()"
+                  moduleName = "Visions.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexlatorre/Downloads/VoiceMemos/Voice%20Memos/Voice%20Memos/ContentView.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "57"
+                  endingLineNumber = "57">
+               </Location>
+               <Location
+                  uuid = "7376403A-9538-40B5-88D5-F6DF2954E8DC - d690a71e83a10e00"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "Visions.AnyCodable.encode(to: Swift.Encoder) throws -&gt; ()"
+                  moduleName = "Visions.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexlatorre/Downloads/VoiceMemos/Voice%20Memos/Voice%20Memos/ContentView.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "56"
+                  endingLineNumber = "56">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>
