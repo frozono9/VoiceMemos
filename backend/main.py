@@ -93,6 +93,17 @@ def token_required(f):
             current_user = users_collection.find_one({"_id": ObjectId(data["user_id"])})
             if not current_user:
                 return jsonify({"message": "User not found for token"}), 401
+            
+            # NUEVA VALIDACIÓN: Verificar que el dispositivo del token coincida con el loggeado
+            token_device_id = data.get('device_id')
+            current_logged_device = current_user.get('loggedInDevice', '')
+            
+            # Si hay un device_id en el token y no coincide con el dispositivo loggeado actual,
+            # el token no es válido (otra sesión tomó control)
+            if token_device_id and current_logged_device and token_device_id != current_logged_device:
+                print(f"[TOKEN_VALIDATION] Token device {token_device_id} != logged device {current_logged_device}")
+                return jsonify({"message": "Session has been taken over by another device"}), 401
+            
             g.current_user = current_user
 
         except jwt.ExpiredSignatureError:
@@ -593,7 +604,7 @@ def register():
         "settings": default_settings, # Add default settings
         "voice_clone_id": None, # Initialize voice_clone_id
         "voice_ids": [], # Initialize voice_ids list for multiple cloned voices
-        "loggedIn": False, # Initialize as not logged in
+        "loggedInDevice": "", # Initialize with empty device (NUEVO)
         "charCount": 0, # Initialize character count for monthly limits
         "lastCharReset": datetime.utcnow() # Track when character count was last reset
     }
@@ -614,43 +625,83 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+    print(f"[LOGIN DEBUG] Received request data: {data}")
+    
     if not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
 
     email_or_username = data.get('email') # Swift client sends 'email' field for email/username
     password = data.get('password')
+    device_id = data.get('device_id')  # NUEVO: ID del dispositivo
+
+    print(f"[LOGIN DEBUG] Extracted fields - email: {email_or_username}, password: {'***' if password else None}, device_id: {device_id}")
 
     if not email_or_username or not password:
         return jsonify({"error": "Missing email/username or password"}), 400
+    
+    if not device_id:
+        print("[LOGIN DEBUG] Missing device_id in request")
+        return jsonify({"error": "Missing device_id"}), 400
 
     # Try to find user by email or username
     user = users_collection.find_one({"$or": [{"email": email_or_username}, {"username": email_or_username}]})
+    print(f"[LOGIN DEBUG] User found: {user['username'] if user else 'None'}")
 
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-        # Check if user is already logged in
-        if user.get('loggedIn', False):
-            return jsonify({"error": "User is already logged in from another device. Please sign out from the other device first."}), 409
+        print(f"[LOGIN DEBUG] Password verified for user: {user['username']}")
         
-        # Password matches and user is not logged in elsewhere, generate JWT
+        # NUEVA LÓGICA: Verificar el estado del dispositivo loggeado
+        current_logged_device = user.get('loggedInDevice', '')
+        print(f"[LOGIN DEBUG] Current logged device: '{current_logged_device}'")
+        
+        # Permitir login si:
+        # 1. No hay dispositivo loggeado (campo vacío o None)
+        # 2. El dispositivo loggeado es el mismo que está intentando hacer login
+        if current_logged_device and current_logged_device != device_id:
+            print(f"[LOGIN DEBUG] Login blocked - device conflict. Current: '{current_logged_device}', Attempting: '{device_id}'")
+            return jsonify({
+                "error": "User is already logged in from another device. Please sign out from the other device first."
+            }), 409
+        
+        print(f"[LOGIN DEBUG] Device check passed. Proceeding with login.")
+        
+        # Password matches and device is allowed to login, generate JWT
         token_payload = {
             'user_id': str(user['_id']),
             'username': user['username'],
+            'device_id': device_id,  # NUEVO: Incluir device_id en el token
             'exp': datetime.utcnow() + timedelta(hours=24)  # Token expires in 24 hours
         }
         try:
             token = jwt.encode(token_payload, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+            print(f"[LOGIN DEBUG] JWT token generated successfully")
             
-            # Set loggedIn to True
-            users_collection.update_one(
+            # NUEVO: Set loggedInDevice to the current device_id
+            print(f"[LOGIN DEBUG] Attempting to update MongoDB with device_id: {device_id}")
+            result = users_collection.update_one(
                 {"_id": user['_id']}, 
-                {"$set": {"loggedIn": True}}
+                {"$set": {"loggedInDevice": device_id}}
             )
+            
+            print(f"[LOGIN DEBUG] MongoDB update result - matched: {result.matched_count}, modified: {result.modified_count}")
+            
+            # Verify the update worked
+            updated_user = users_collection.find_one({"_id": user['_id']})
+            if updated_user:
+                final_device = updated_user.get('loggedInDevice', 'NOT_SET')
+                print(f"[LOGIN DEBUG] Final loggedInDevice value: '{final_device}'")
+            else:
+                print(f"[LOGIN DEBUG] ERROR: Could not retrieve updated user")
+            
+            print(f"[LOGIN] User {user['username']} logged in from device: {device_id}")
             
             return jsonify({"message": "Login successful", "token": token}), 200
         except Exception as e:
-            print(f"Error generating token: {e}")
+            print(f"[LOGIN DEBUG] Error generating token or updating DB: {e}")
+            traceback.print_exc()
             return jsonify({"error": "Failed to generate token"}), 500
     else:
+        print(f"[LOGIN DEBUG] Authentication failed for user: {email_or_username}")
         return jsonify({"error": "Invalid credentials"}), 401
 
 @app.route('/verify-activation-code', methods=['POST'])
@@ -712,13 +763,13 @@ def reset_password():
         # Hash the new password
         hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         
-        # Update user password and set loggedIn to False (logout from all devices)
+        # Update user password and clear loggedInDevice (logout from all devices)
         result = users_collection.update_one(
             {"_id": user['_id']}, 
             {
                 "$set": {
                     "password": hashed_password,
-                    "loggedIn": False  # Force logout from all devices
+                    "loggedInDevice": ""  # Force logout from all devices
                 }
             }
         )
@@ -1081,45 +1132,41 @@ def update_settings():
 @app.route('/logout', methods=['POST'])
 @token_required
 def logout():
-    """Endpoint to log out the current user and set loggedIn to false"""
+    """Endpoint to log out the current user and clear loggedInDevice"""
     try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id')
+        
         user_id = g.current_user['_id']
         username = g.current_user.get('username', 'unknown')
+        current_logged_device = g.current_user.get('loggedInDevice', '')
         
-        print(f"[LOGOUT DEBUG] Attempting to log out user: {username} (ID: {user_id})")
-        print(f"[LOGOUT DEBUG] User ID type: {type(user_id)}")
+        print(f"[LOGOUT] User: {username}, Device ID: {device_id}, Currently logged device: {current_logged_device}")
         
-        # Check current loggedIn status before update
-        current_user = users_collection.find_one({"_id": user_id})
-        if current_user:
-            print(f"[LOGOUT DEBUG] Current loggedIn status before update: {current_user.get('loggedIn', 'NOT_SET')}")
-        else:
-            print(f"[LOGOUT DEBUG] WARNING: Could not find user {username} before logout update")
+        # Verificar que el dispositivo que está haciendo logout es el mismo que está loggeado
+        if device_id and current_logged_device and current_logged_device != device_id:
+            print(f"[LOGOUT] Warning: Device {device_id} trying to logout, but {current_logged_device} is logged in")
+            # Permitir el logout de todos modos, pero loggear la inconsistencia
         
-        # Set loggedIn to False for the current user
+        # Clear loggedInDevice field (set to empty string)
         result = users_collection.update_one(
             {"_id": user_id}, 
-            {"$set": {"loggedIn": False}}
+            {"$set": {"loggedInDevice": ""}}
         )
         
-        print(f"[LOGOUT DEBUG] MongoDB update result - matched: {result.matched_count}, modified: {result.modified_count}")
+        print(f"[LOGOUT] MongoDB update result - matched: {result.matched_count}, modified: {result.modified_count}")
         
         # Verify the update worked
         updated_user = users_collection.find_one({"_id": user_id})
         if updated_user:
-            print(f"[LOGOUT DEBUG] User {username} loggedIn status after update: {updated_user.get('loggedIn', 'NOT_SET')}")
-            
-            # Extra verification - check if the field exists and its type
-            if 'loggedIn' in updated_user:
-                print(f"[LOGOUT DEBUG] loggedIn field type: {type(updated_user['loggedIn'])}, value: {repr(updated_user['loggedIn'])}")
-            else:
-                print(f"[LOGOUT DEBUG] WARNING: loggedIn field not found in user document after update")
+            final_logged_device = updated_user.get('loggedInDevice', 'NOT_SET')
+            print(f"[LOGOUT] User {username} loggedInDevice after update: '{final_logged_device}'")
         else:
-            print(f"[LOGOUT DEBUG] ERROR: Could not find user {username} after logout update")
+            print(f"[LOGOUT] ERROR: Could not find user {username} after logout update")
         
         return jsonify({"message": "Logged out successfully"}), 200
     except Exception as e:
-        print(f"[LOGOUT DEBUG] Error during logout: {e}")
+        print(f"[LOGOUT] Error during logout: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to log out due to a server error"}), 500
 
@@ -1136,13 +1183,16 @@ def debug_user_status():
         if not user:
             return jsonify({"error": "User not found"}), 404
             
-        logged_in_status = user.get('loggedIn', 'NOT_SET')
+        # Check both old and new fields for debugging
+        old_logged_in = user.get('loggedIn', 'NOT_SET')
+        logged_in_device = user.get('loggedInDevice', 'NOT_SET')
         
         return jsonify({
             "username": username,
             "user_id": str(user_id),
-            "loggedIn_status": logged_in_status,
-            "loggedIn_type": str(type(logged_in_status)),
+            "old_loggedIn_status": old_logged_in,  # Legacy field for debugging
+            "loggedInDevice": logged_in_device,    # New field
+            "loggedInDevice_type": str(type(logged_in_device)),
             "message": "User status retrieved successfully"
         }), 200
         
@@ -1155,31 +1205,30 @@ def debug_user_status():
 @app.route('/force-logout', methods=['POST'])
 @token_required
 def force_logout():
-    """Force logout endpoint to manually set loggedIn to false"""
+    """Force logout endpoint to manually clear loggedInDevice"""
     try:
         user_id = g.current_user['_id']
         username = g.current_user.get('username', 'unknown')
         
         print(f"[FORCE LOGOUT] Forcing logout for user: {username} (ID: {user_id})")
         
-        # Force set loggedIn to False
+        # Force clear loggedInDevice
         result = users_collection.update_one(
             {"_id": user_id}, 
-            {"$set": {"loggedIn": False}}
+            {"$set": {"loggedInDevice": ""}}
         )
         
         print(f"[FORCE LOGOUT] Update result - matched: {result.matched_count}, modified: {result.modified_count}")
         
         # Verify the update
         updated_user = users_collection.find_one({"_id": user_id})
-        if updated_user:
-            print(f"[FORCE LOGOUT] Final loggedIn status: {updated_user.get('loggedIn', 'NOT_SET')}")
+        final_status = updated_user.get('loggedInDevice', 'NOT_SET') if updated_user else 'USER_NOT_FOUND'
         
         return jsonify({
             "message": "Force logout completed", 
             "matched": result.matched_count,
             "modified": result.modified_count,
-            "final_status": updated_user.get('loggedIn', 'NOT_SET') if updated_user else 'USER_NOT_FOUND'
+            "final_status": final_status
         }), 200
         
     except Exception as e:

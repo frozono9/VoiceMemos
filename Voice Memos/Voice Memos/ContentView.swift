@@ -4671,9 +4671,12 @@ class AuthManager: ObservableObject {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // Incluir el deviceId en la petición de login
+        let deviceId = DeviceManager.getDeviceId()
         let body: [String: String] = [
             "email": emailOrUsername, // Backend expects 'email' for email/username
-            "password": password
+            "password": password,
+            "device_id": deviceId // Nuevo campo para el identificador del dispositivo
         ]
 
         do {
@@ -4827,6 +4830,19 @@ class AuthManager: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Incluir el deviceId en la petición de logout
+        let deviceId = DeviceManager.getDeviceId()
+        let body: [String: String] = [
+            "device_id": deviceId
+        ]
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            print("AuthManager: Error encoding logout request body: \(error)")
+            return
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
